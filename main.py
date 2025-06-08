@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import random
 from typing import List, Dict, Tuple, Optional
 from datetime import date
+import json # Importem json per a la depuració
 from diccionari_millorat import obtenir_diccionari_millorat, obtenir_forma_canonica, normalitzar_paraula
 from proximitat import carregar_model_fasttext, calcular_ranking_complet
 

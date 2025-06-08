@@ -44,12 +44,14 @@ def processar_diccionari(contingut: str) -> Tuple[Dict[str, str], Dict[str, Set[
         if not es_categoria_valida(categoria):
             continue
             
-        # Si la paraula ja existeix al mapping, preferim la forma més simple
-        if paraula in mapping_flexions:
-            # Si el lema actual és més curt, l'utilitzem
-            if len(lema) < len(mapping_flexions[paraula]):
-                mapping_flexions[paraula] = lema
+        # si la paraula ja existeix com a canònica, l'afegim a les flexions
+        if paraula in formes_canoniques:
+            mapping_flexions[paraula] = paraula
         else:
+            mapping_flexions[paraula] = lema
+
+        # Si la paraula és canonica i ja existex com a flexió, la substituim per la canònica
+        if paraula == lema and paraula in mapping_flexions:
             mapping_flexions[paraula] = lema
             
         # Afegir a les formes canòniques
@@ -84,7 +86,7 @@ def obtenir_diccionari_millorat() -> Tuple[Dict[str, str], Dict[str, Set[str]]]:
     mapping_dnv, canoniques_dnv = processar_diccionari(contingut_dnv)
     
     # Combinar els resultats
-    mapping_final = {**mapping_lt, **mapping_dnv}
+    mapping_final = {**mapping_dnv, **mapping_lt}
     canoniques_final = canoniques_lt.copy()
     for lema, flexions in canoniques_dnv.items():
         if lema in canoniques_final:
