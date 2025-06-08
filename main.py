@@ -2,111 +2,91 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import random
-from typing import List, Dict
-import torch
-from transformers import AutoTokenizer, AutoModel
-import numpy as np
-from diccionari import obtenir_diccionari, normalitzar_paraula
-import os
+from typing import List, Dict, Tuple, Optional
+from datetime import date
+from diccionari_millorat import obtenir_diccionari_millorat, obtenir_forma_canonica, normalitzar_paraula
+from proximitat import carregar_model_fasttext, calcular_ranking_complet
 
 app = FastAPI()
 
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Permet tots els orígens, per a desenvolupament
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Carregar el model d'IA
-print("Carregant el model d'IA...")
-tokenizer = AutoTokenizer.from_pretrained("BSC-TeMU/roberta-base-ca")
-model = AutoModel.from_pretrained("BSC-TeMU/roberta-base-ca")
-print("Model carregat correctament!")
+# Carregar diccionari
+print("Carregant diccionari...")
+MAPPING_FLEXIONS, FORMES_CANONIQUES = obtenir_diccionari_millorat()
+print(f"Nombre de formes canòniques: {len(FORMES_CANONIQUES)}")
 
-# Carregar el diccionari
-DICCIONARI = obtenir_diccionari()
-print(f"Nombre de paraules al diccionari: {len(DICCIONARI)}")
-if len(DICCIONARI) == 0:
-    print("ERROR: El diccionari està buit!")
-    print("Verificant si existeix el fitxer de cache...")
-    if os.path.exists("diccionari_cache.txt"):
-        print("El fitxer de cache existeix")
-        with open("diccionari_cache.txt", 'r', encoding='utf-8') as f:
-            content = f.read()
-            print(f"Mida del fitxer: {len(content)} bytes")
-    else:
-        print("El fitxer de cache NO existeix")
-else:
-    print("Exemples de paraules al diccionari:")
-    for paraula in list(DICCIONARI)[:5]:
-        print(f"- {paraula}")
+# Carregar model fastText
+FT_MODEL = carregar_model_fasttext()
 
-# Paraula del dia (normalitzada)
-if len(DICCIONARI) > 0:
-    PARAULA_DIA = 'gat'# random.choice(list(DICCIONARI))
-    PARAULA_DIA_NORMALITZADA = normalitzar_paraula(PARAULA_DIA)
-    print(f"\nParaula del dia seleccionada: {PARAULA_DIA}")
+# Paraula del dia i càlcul de rànquing
+if len(FORMES_CANONIQUES) > 0:
+    # Generar una paraula del dia consistent basada en la data
+    avui = date.today()
+    seed_diaria = avui.year * 10000 + avui.month * 100 + avui.day
+    random.seed(seed_diaria)
+    
+    PARAULA_DIA = "perímetre" #random.choice(list(FORMES_CANONIQUES.keys()))
+    print(f"\nParaula del dia seleccionada (seed: {seed_diaria}): {PARAULA_DIA}")
+    
+    # Calcular rànquing inicial
+    RANKING_DICCIONARI = calcular_ranking_complet(
+        PARAULA_DIA, 
+        list(FORMES_CANONIQUES.keys()), 
+        FT_MODEL
+    )
+    TOTAL_PARAULES_RANKING = len(RANKING_DICCIONARI)
 else:
     print("No es pot seleccionar una paraula del dia perquè el diccionari està buit")
     exit(1)
 
 class GuessRequest(BaseModel):
-    word: str
+    paraula: str
 
 class GuessResponse(BaseModel):
-    proximitat: float
+    paraula: str
+    forma_canonica: Optional[str]
+    posicio: int
+    total_paraules: int
     es_correcta: bool
-    arrel: str
-
-def calcular_proximitat(paraula1: str, paraula2: str) -> float:
-    """Calcula la proximitat semàntica entre dues paraules utilitzant el model d'IA."""
-    try:
-        # Normalitzar les paraules
-        paraula1_norm = normalitzar_paraula(paraula1)
-        paraula2_norm = normalitzar_paraula(paraula2)
-        
-        # Si són exactament iguals, retornar 1.0
-        if paraula1_norm == paraula2_norm:
-            return 1.0
-            
-        # Obtenir els embeddings de les paraules
-        tokens1 = tokenizer(paraula1_norm, return_tensors="pt", padding=True, truncation=True)
-        tokens2 = tokenizer(paraula2_norm, return_tensors="pt", padding=True, truncation=True)
-        
-        with torch.no_grad():
-            embeddings1 = model(**tokens1).last_hidden_state.mean(dim=1)
-            embeddings2 = model(**tokens2).last_hidden_state.mean(dim=1)
-        
-        # Calcular la similitud del cosinus
-        similarity = torch.nn.functional.cosine_similarity(embeddings1, embeddings2)
-        return float(similarity[0])
-    except Exception as e:
-        print(f"Error calculant proximitat: {e}")
-        return 0.0
 
 @app.post("/guess", response_model=GuessResponse)
-async def guess_word(guess: GuessRequest):
-    # Normalitzar la paraula introduïda
-    paraula_introduida = guess.word.lower()
-    paraula_introduida_norm = normalitzar_paraula(paraula_introduida)
+async def guess(request: GuessRequest):
+    paraula_introduida = normalitzar_paraula(request.paraula)
     
-    # Verificar si la paraula és vàlida
-    if paraula_introduida not in DICCIONARI:
-        raise HTTPException(status_code=400, detail="Paraula no vàlida")
+    forma_canonica, es_flexio = obtenir_forma_canonica(paraula_introduida, MAPPING_FLEXIONS)
     
-    # Calcular la proximitat
-    proximitat = calcular_proximitat(paraula_introduida, PARAULA_DIA)
+    if forma_canonica is None:
+        raise HTTPException(
+            status_code=400, 
+            detail="Paraula no vàlida. No es troba al diccionari."
+        )
     
-    # Determinar si és correcta
-    es_correcta = paraula_introduida_norm == PARAULA_DIA_NORMALITZADA
+    # Obtenir el rànquing de la paraula
+    rank = RANKING_DICCIONARI.get(forma_canonica)
+    
+    # Si la paraula canònica no està al rànquing (no hauria de passar si està al diccionari)
+    if rank is None:
+        raise HTTPException(
+            status_code=500, 
+            detail="Error intern: La paraula no s'ha trobat al rànquing."
+        )
+
+    es_correcta = forma_canonica == PARAULA_DIA
     
     return GuessResponse(
-        proximitat=proximitat,
-        es_correcta=es_correcta,
-        arrel=paraula_introduida  # En aquest cas, la paraula és la seva pròpia arrel
+        paraula=paraula_introduida,
+        forma_canonica=forma_canonica if es_flexio else None,
+        posicio=rank,
+        total_paraules=TOTAL_PARAULES_RANKING,
+        es_correcta=es_correcta
     )
 
 @app.get("/")
