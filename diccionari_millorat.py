@@ -1,3 +1,71 @@
+import random
+def obtenir_paraula_aleatoria(mapping_flexions, canoniques, freq_url="https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/refs/heads/master/frequencies/frequencies-dict-lemmas.txt", freq_min=2000, rnd=None, seed=None):
+    """
+    Retorna una paraula aleatòria (lema) amb freqüència >= freq_min.
+    mapping_flexions: dict flexió -> canònica
+    canoniques: dict canònica -> conjunt de flexions
+    freq_url: URL del fitxer de freqüències de lemes
+    freq_min: freqüència mínima per considerar
+    rnd: objecte random.Random opcional per controlar la repetició
+    seed: si es passa, es crea un random.Random amb aquesta seed
+    """
+    print(f"Descarregant freqüències de lemes des de {freq_url}...")
+    contingut = descarregar_diccionari(freq_url)
+    freq_lemes = {}
+    for linia in contingut.splitlines():
+        if not linia.strip():
+            continue
+        parts = linia.split(",")
+        if len(parts) != 2:
+            continue
+        lema = parts[0].strip().lower()
+        try:
+            freq = int(parts[1].strip())
+        except ValueError:
+            continue
+        freq_lemes[lema] = freq
+
+    candidats = [lema for lema in canoniques if freq_lemes.get(lema, 0) >= freq_min]
+    if not candidats:
+        raise ValueError(f"No s'ha trobat cap paraula amb freqüència >= {freq_min}")
+    if seed is not None:
+        rnd = random.Random(seed)
+    if rnd is None:
+        rnd = random
+    lema_aleatori = rnd.choice(candidats)
+
+    return lema_aleatori
+def filtrar_diccionari_per_frequencia(mapping_flexions, canoniques, freq_url="https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/refs/heads/master/frequencies/frequencies-dict-lemmas.txt", freq_min=20):
+    """
+    Filtra el diccionari segons la freqüència de lema. Només es conserven les paraules amb freqüència >= freq_min.
+    mapping_flexions: dict flexió -> canònica
+    canoniques: dict canònica -> conjunt de flexions
+    freq_url: URL del fitxer de freqüències de lemes
+    freq_min: freqüència mínima per conservar
+    Retorna: (nou_mapping_flexions, noves_canoniques)
+    """
+    print(f"Descarregant freqüències de lemes des de {freq_url}...")
+    contingut = descarregar_diccionari(freq_url)
+    freq_lemes = {}
+    for linia in contingut.splitlines():
+        if not linia.strip():
+            continue
+        parts = linia.split(",")
+        if len(parts) != 2:
+            continue
+        lema = parts[0].strip().lower()
+        try:
+            freq = int(parts[1].strip())
+        except ValueError:
+            continue
+        freq_lemes[lema] = freq
+
+    # Filtrar les canòniques segons la freqüència
+    canoniques_filtrades = {lema: flexions for lema, flexions in canoniques.items() if freq_lemes.get(lema, 0) >= freq_min}
+    # Filtrar mapping_flexions per només incloure flexions que tinguin canònica vàlida
+    mapping_filtrat = {flexio: canonic for flexio, canonic in mapping_flexions.items() if canonic in canoniques_filtrades}
+    print(f"Paraules filtrades per freqüència >= {freq_min}: {len(mapping_filtrat)} flexions, {len(canoniques_filtrades)} lemes.")
+    return mapping_filtrat, canoniques_filtrades
 import re
 from typing import Dict, Set, Tuple
 import requests
@@ -16,8 +84,7 @@ def es_categoria_valida(categoria: str) -> bool:
     """Determina si una categoria gramatical és vàlida pel nostre diccionari."""
     # NC: nom comú
     # VM: verb principal
-    # AQ: adjectiu qualificatiu
-    return categoria.startswith(('NC', 'VM', 'AQ'))
+    return categoria.startswith(('NC', 'VM'))
 
 def processar_diccionari(contingut: str) -> Tuple[Dict[str, str], Dict[str, Set[str]]]:
     """
@@ -66,40 +133,64 @@ def obtenir_diccionari_millorat() -> Tuple[Dict[str, str], Dict[str, Set[str]]]:
     - Mapping de formes canòniques a les seves flexions
     Primer intenta carregar des del cache, si no existeix, el genera i el desa.
     """
+    # Llista de diccionaris a utilitzar (comenta/descomenta els que vulguis)
+    diccionaris = [
+        #("dnv", "https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/refs/heads/master/resultats/lt/diccionari-dnv.txt"),
+        ("lt", "https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/master/resultats/lt/diccionari.txt"),
+        # ("ALTRE", "URL_ALTRE_DICCIONARI"),
+    ]
+
+    freq_url = "https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/refs/heads/master/frequencies/frequencies-dict-lemmas.txt"
+    freq_min = 20
+
     if os.path.exists(CACHE_FILE):
         print(f"Carregant diccionari des del cache: {CACHE_FILE}")
         with open(CACHE_FILE, 'rb') as f:
-            mapping_final, canoniques_final = pickle.load(f)
-        return mapping_final, canoniques_final
+            diccionaris_data = pickle.load(f)
+        # Escriure fitxers de debug per cada diccionari carregat
+        for nom, (mapping, canoniques) in diccionaris_data.items():
+            debug_file = f"diccionari_debug_{nom}.txt"
+            with open(debug_file, 'w', encoding='utf-8') as f_debug:
+                for flexio, canonic in mapping.items():
+                    f_debug.write(f"{flexio} -> {canonic}\n")
+            debug_file_canoniques = f"diccionari_debug_canoniques_{nom}.txt"
+            with open(debug_file_canoniques, 'w', encoding='utf-8') as f_debug_can:
+                for canonic, flexions in canoniques.items():
+                    flexions_str = ', '.join(sorted(flexions))
+                    f_debug_can.write(f"{canonic}: {flexions_str}\n")
+        # Compatibilitat: si només hi ha un diccionari, retorna directament el mapping/canoniques
+        if len(diccionaris_data) == 1:
+            return list(diccionaris_data.values())[0]
+        return diccionaris_data
 
-    print("Generant diccionari des de les fonts...")
-    # URLs dels diccionaris
-    url_lt = "https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/master/resultats/lt/diccionari.txt"
-    url_dnv = "https://raw.githubusercontent.com/Softcatala/catalan-dict-tools/refs/heads/master/resultats/lt/diccionari-dnv.txt"
-    
-    # Descarregar i processar els diccionaris
-    contingut_lt = descarregar_diccionari(url_lt)
-    contingut_dnv = descarregar_diccionari(url_dnv)
-    
-    # Processar cada diccionari
-    mapping_lt, canoniques_lt = processar_diccionari(contingut_lt)
-    mapping_dnv, canoniques_dnv = processar_diccionari(contingut_dnv)
-    
-    # Combinar els resultats
-    mapping_final = {**mapping_dnv, **mapping_lt}
-    canoniques_final = canoniques_lt.copy()
-    for lema, flexions in canoniques_dnv.items():
-        if lema in canoniques_final:
-            canoniques_final[lema].update(flexions)
-        else:
-            canoniques_final[lema] = flexions
-    
+    print("Generant diccionaris des de les fonts...")
+    diccionaris_data = {}
+    for nom, url in diccionaris:
+        print(f"Descarregant {nom}...")
+        contingut = descarregar_diccionari(url)
+        mapping, canoniques = processar_diccionari(contingut)
+        mapping, canoniques = filtrar_diccionari_per_frequencia(mapping, canoniques, freq_url=freq_url, freq_min=freq_min)
+        diccionaris_data[nom] = (mapping, canoniques)
+        # Fitxers de debug per cada diccionari
+        debug_file = f"diccionari_debug_{nom}.txt"
+        with open(debug_file, 'w', encoding='utf-8') as f_debug:
+            for flexio, canonic in mapping.items():
+                f_debug.write(f"{flexio} -> {canonic}\n")
+        debug_file_canoniques = f"diccionari_debug_canoniques_{nom}.txt"
+        with open(debug_file_canoniques, 'w', encoding='utf-8') as f_debug_can:
+            for canonic, flexions in canoniques.items():
+                flexions_str = ', '.join(sorted(flexions))
+                f_debug_can.write(f"{canonic}: {flexions_str}\n")
+
     # Desar al cache per a futures execucions
     with open(CACHE_FILE, 'wb') as f:
-        print(f"Desant diccionari al cache: {CACHE_FILE}")
-        pickle.dump((mapping_final, canoniques_final), f)
-    
-    return mapping_final, canoniques_final
+        print(f"Desant diccionaris al cache: {CACHE_FILE}")
+        pickle.dump(diccionaris_data, f)
+
+    # Compatibilitat: si només hi ha un diccionari, retorna directament el mapping/canoniques
+    if len(diccionaris_data) == 1:
+        return list(diccionaris_data.values())[0]
+    return diccionaris_data
 
 def normalitzar_paraula(paraula: str) -> str:
     """Normalitza una paraula mantenint accents i caràcters especials."""
