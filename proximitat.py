@@ -4,7 +4,8 @@ import os
 import numpy as np
 from typing import List, Dict
 
-MODEL_PATH = "cc.ca.300.bin"
+import os
+MODEL_PATH = os.path.join("data", "cc.ca.300.bin")
 
 def descarregar_model_fasttext():
     """Descarrega el model de fastText per al català si no existeix."""
@@ -47,11 +48,11 @@ def calcular_ranking_complet(paraula_objectiu: str, diccionari: List[str], model
     ranking_dict = {paraula: i for i, (paraula, _) in enumerate(similituds)}
 
     # Escriure el rànquing a un fitxer de debug
-    with open("ranking_debug.txt", "w", encoding="utf-8") as f:
+    debug_path = os.path.join("data", "ranking_debug.txt")
+    with open(debug_path, "w", encoding="utf-8") as f:
         f.write(f"Rànquing per a la paraula objectiu: '{paraula_objectiu}'\n")
         f.write("="*50 + "\n")
         for i, (paraula, sim) in enumerate(similituds):
             f.write(f"{i:<5} | {paraula:<20} | Similitud: {sim:.4f}\n")
-    
-    print("Rànquing complet calculat i desat a 'ranking_debug.txt'.")
+    print(f"Rànquing complet calculat i desat a '{debug_path}'.")
     return ranking_dict 
