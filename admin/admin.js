@@ -161,13 +161,27 @@ function bindStaticEvents() {
 let testVisible = false;
 async function toggleTestOverlay() {
   if (!selected) return;
-  testVisible = !testVisible;
+  if (testVisible) {
+    hideTestOverlay();
+  } else {
+    testVisible = true;
+    await loadTestOverlayData();
+  }
+}
+
+function hideTestOverlay() {
+  testVisible = false;
   const overlay = document.getElementById("test-overlay");
-  if (!testVisible) {
+  if (overlay) {
     overlay.style.display = "none";
     overlay.innerHTML = "";
-    return;
   }
+}
+
+async function loadTestOverlayData() {
+  if (!testVisible || !selected) return;
+  const overlay = document.getElementById("test-overlay");
+  if (!overlay) return;
   overlay.style.display = "block";
   overlay.innerHTML =
     '<div class="text-muted small">Carregant paraules test…</div>';
@@ -177,6 +191,7 @@ async function toggleTestOverlay() {
     });
     if (!res.ok) throw new Error();
     const data = await res.json();
+    if (!testVisible) return; // si s'ha tancat mentre carregava
     const rows = data.words
       .map((w) => {
         if (w.found) {
@@ -193,10 +208,8 @@ async function toggleTestOverlay() {
       <strong class="small">Paraules test (${data.count})</strong>
       <button class="btn btn-sm btn-outline-secondary" id="close-test">Tanca</button>
     </div><div class="test-body" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${rows}</div>`;
-    document.getElementById("close-test").onclick = () => {
-      testVisible = false;
-      toggleTestOverlay();
-    };
+    const closeBtn = document.getElementById("close-test");
+    if (closeBtn) closeBtn.onclick = () => hideTestOverlay();
     overlay.querySelectorAll("a.jump").forEach((a) => {
       a.addEventListener("click", async (e) => {
         e.preventDefault();
@@ -212,6 +225,10 @@ async function toggleTestOverlay() {
     overlay.innerHTML =
       '<div class="text-danger small">Error carregant test</div>';
   }
+}
+
+function refreshTestOverlayIfVisible() {
+  if (testVisible) loadTestOverlayData();
 }
 
 function fetchFiles() {
@@ -309,6 +326,7 @@ function loadFile(filename) {
       total = data.total;
       loading = false;
       renderWordsArea();
+      refreshTestOverlayIfVisible();
     });
 }
 
@@ -476,6 +494,7 @@ function onDrop(e, pos, item) {
     if (wordItems[toIndex]) tempHighlightElement(wordItems[toIndex]);
   }, 0);
   scheduleAutoSave();
+  refreshTestOverlayIfVisible();
 }
 
 // Menú contextual
@@ -559,6 +578,7 @@ function showMenu(e, pos) {
         special: true,
         force: target >= PAGE_SIZE,
       });
+      refreshTestOverlayIfVisible();
     });
   });
   // Només tanca el menú si es fa clic fora
@@ -595,6 +615,7 @@ async function handleMoveToPrompt() {
     special: true,
     force: target >= PAGE_SIZE,
   });
+  refreshTestOverlayIfVisible();
 }
 async function handleSendToEndMenu() {
   if (menuIdx === null) return closeMenu();
@@ -609,6 +630,7 @@ async function handleSendToEndMenu() {
     special: true,
     force: target >= PAGE_SIZE,
   });
+  refreshTestOverlayIfVisible();
 }
 
 async function handleDeleteWord() {
@@ -639,6 +661,7 @@ async function handleDeleteWord() {
     renderWordsArea();
     // Una eliminació no necessita desat addicional (ja està persistit), però marquem estat
     showAutoSaveDone();
+    refreshTestOverlayIfVisible();
   } catch (e) {
     alert(e.message);
   }
@@ -682,6 +705,7 @@ async function reloadInitialBlock() {
   data.words.forEach((w) => (wordsByPos[w.pos] = w));
   total = data.total;
   renderWordsArea();
+  refreshTestOverlayIfVisible();
 }
 
 // options: {highlight, force, special}
@@ -879,6 +903,7 @@ function saveFile() {
     .then(() => {
       dirty = false;
       showAutoSaveDone();
+      refreshTestOverlayIfVisible();
     })
     .catch(() => {
       if (status) {
@@ -953,6 +978,7 @@ function loadMoreGap(start, endKnown) {
         }, 0);
       }
     });
+  refreshTestOverlayIfVisible();
 }
 
 function triggerSearch(term) {
