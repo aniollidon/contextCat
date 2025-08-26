@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict
 from pydantic import BaseModel
@@ -12,7 +12,29 @@ load_dotenv()
 WORDS_DIR = Path(__file__).parent / "data" / "words"
 WORDS_DIR.mkdir(parents=True, exist_ok=True)
 
+VALIDATIONS_PATH = Path(__file__).parent / "data" / "validacions.json"
+
+def _load_validations() -> dict:
+    if VALIDATIONS_PATH.exists():
+        try:
+            with open(VALIDATIONS_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {}
+
+def _save_validations(data: dict):
+    try:
+        with open(VALIDATIONS_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        raise HTTPException(status_code=500, detail="No s'ha pogut desar validacions")
+
 ADMIN_PORT = int(os.getenv("ADMIN_PORT", 5001))
+
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 app = FastAPI()
 
@@ -38,15 +60,56 @@ class GenerateRequest(BaseModel):
 class RandomGenerateRequest(BaseModel):
     count: int = 10
 
+class AuthRequest(BaseModel):
+    password: str
+
+def require_auth(request: Request):
+    if not ADMIN_PASSWORD:
+        return  # no password set -> open
+    header = request.headers.get("x-admin-token")
+    if not header or header != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+@app.post("/api/auth")
+def auth(req: AuthRequest):
+    if not ADMIN_PASSWORD:
+        return {"ok": True, "note": "No password configured"}
+    if req.password == ADMIN_PASSWORD:
+        return {"ok": True}
+    raise HTTPException(status_code=401, detail="Contrasenya incorrecta")
+
 @app.get("/api/rankings")
-def list_rankings():
+def list_rankings(_: None = Depends(require_auth)):
     files = [f.name for f in WORDS_DIR.glob("*.json")]
     return files
+
+@app.get("/api/validations")
+def get_validations(_: None = Depends(require_auth)):
+    return _load_validations()
+
+class ValidationUpdate(BaseModel):
+    validated: bool
+
+@app.post("/api/validations/{filename}")
+def set_validation(filename: str, upd: ValidationUpdate, _: None = Depends(require_auth)):
+    # accept only existing ranking files
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat")
+    vals = _load_validations()
+    if upd.validated:
+        vals[filename] = True
+    else:
+        # remove key if false to keep file small
+        if filename in vals:
+            del vals[filename]
+    _save_validations(vals)
+    return {"ok": True, "validated": upd.validated}
 
 from fastapi import Query
 
 @app.get("/api/rankings/{filename}")
-def read_ranking(filename: str, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1)):
+def read_ranking(filename: str, offset: int = Query(0, ge=0), limit: int = Query(100, ge=1), _: None = Depends(require_auth)):
     file_path = WORDS_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Fitxer no trobat.")
@@ -59,7 +122,7 @@ def read_ranking(filename: str, offset: int = Query(0, ge=0), limit: int = Query
     return {"total": len(items), "words": [{"word": w, "pos": p} for w, p in paged]}
 
 @app.delete("/api/rankings/{filename}")
-def delete_ranking(filename: str):
+def delete_ranking(filename: str, _: None = Depends(require_auth)):
     file_path = WORDS_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="No s'ha pogut esborrar.")
@@ -70,7 +133,7 @@ def delete_ranking(filename: str):
 from fastapi import Request
 
 @app.post("/api/rankings/{filename}")
-async def save_ranking(filename: str, request: Request):
+async def save_ranking(filename: str, request: Request, _: None = Depends(require_auth)):
     file_path = WORDS_DIR / filename
     body = await request.json()
     # Si rep fragment i offset, només actualitza el tram
@@ -101,7 +164,7 @@ async def save_ranking(filename: str, request: Request):
         return {"ok": True}
 
 @app.post("/api/rankings")
-def create_ranking(ranking: RankingFile):
+def create_ranking(ranking: RankingFile, _: None = Depends(require_auth)):
     file_path = WORDS_DIR / ranking.filename
     if file_path.exists():
         raise HTTPException(status_code=400, detail="Ja existeix.")
@@ -110,7 +173,7 @@ def create_ranking(ranking: RankingFile):
     return {"ok": True}
 
 @app.post("/api/rankings/{filename}/move")
-def move_word(filename: str, move: MoveRequest):
+def move_word(filename: str, move: MoveRequest, _: None = Depends(require_auth)):
     """Move a word from one absolute position to another without loading all slices on frontend."""
     file_path = WORDS_DIR / filename
     if not file_path.exists():
@@ -133,7 +196,7 @@ def move_word(filename: str, move: MoveRequest):
     return {"ok": True, "word": word, "from": move.from_pos, "to": move.to_pos, "total": total}
 
 @app.post("/api/rankings/generate")
-def generate_ranking(req: GenerateRequest):
+def generate_ranking(req: GenerateRequest, _: None = Depends(require_auth)):
     """Genera un fitxer de rànquing per a una paraula (similar a generate.py)."""
     word = req.word.strip().lower()
     if not word:
@@ -165,7 +228,7 @@ def generate_ranking(req: GenerateRequest):
 
 # Endpoint alternatiu sense conflicte amb /api/rankings/{filename}
 @app.post("/api/generate")
-def generate_ranking_alt(req: GenerateRequest):
+def generate_ranking_alt(req: GenerateRequest, _: None = Depends(require_auth)):
     """Mateixa funcionalitat que /api/rankings/generate però evita conflictes de routing."""
     return generate_ranking(req)
 
@@ -197,7 +260,7 @@ def _get_model():
     return _MODEL
 
 @app.post("/api/generate-random")
-def generate_random(req: RandomGenerateRequest):
+def generate_random(req: RandomGenerateRequest, _: None = Depends(require_auth)):
     """Genera diversos fitxers de rànquing per paraules aleatòries."""
     count = max(1, min(req.count, 50))  # límit de seguretat
     dicc = _get_diccionari()
@@ -228,7 +291,7 @@ def generate_random(req: RandomGenerateRequest):
     return {"ok": True, "generated": generats, "count": len(generats)}
 
 @app.get("/api/rankings/{filename}/find")
-def find_word(filename: str, word: str):
+def find_word(filename: str, word: str, _: None = Depends(require_auth)):
     file_path = WORDS_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Fitxer no trobat.")
@@ -238,6 +301,25 @@ def find_word(filename: str, word: str):
     if w in data:
         return {"found": True, "pos": data[w]}
     return {"found": False}
+
+@app.delete("/api/rankings/{filename}/word/{pos}")
+def delete_word(filename: str, pos: int, _: None = Depends(require_auth)):
+    """Elimina una paraula de la llista pel seu rang (posició absoluta) i reindexa."""
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat.")
+    with open(file_path, encoding="utf-8") as f:
+        data = json.load(f)  # dict word->pos
+    items = sorted(data.items(), key=lambda x: x[1])  # [(word, pos), ...]
+    total = len(items)
+    if pos < 0 or pos >= total:
+        raise HTTPException(status_code=400, detail="Posició fora de rang")
+    deleted_word, _ = items.pop(pos)
+    # Reindexa
+    new_data = {w: i for i, (w, _) in enumerate(items)}
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(new_data, f, ensure_ascii=False, indent=2)
+    return {"ok": True, "deleted": deleted_word, "pos": pos, "total": len(items)}
 
 if __name__ == "__main__":
     import sys
