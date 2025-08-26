@@ -94,7 +94,7 @@ function renderApp() {
     <div class="container py-4">
       <div class="row mb-4">
         <div class="col-12 text-center">
-          <h2 class="fw-bold mb-2">Gestió ContextCat</h2>
+          <h2 class="fw-bold mb-2">Gestió Rebuscat.cat</h2>
         </div>
       </div>
       <div class="row g-4">
