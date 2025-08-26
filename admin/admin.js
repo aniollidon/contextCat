@@ -123,7 +123,6 @@ function renderApp() {
               <input id="search-word" type="text" class="form-control" placeholder="Cerca paraula..." />
               <button class="btn btn-outline-secondary" id="search-btn" type="button" title="Cerca">Cerca</button>
               <button class="btn btn-outline-info" id="show-test" type="button" title="Mostra paraules test">Test</button>
-               <button class="btn btn-outline-success" id="add-test" type="button" title="Afegeix paraules al test (separa per comes)">+Test</button>
             </div>
             <div id="words-area" style="min-height:120px;"></div>
             <div id="test-overlay" style="display:none; max-height:220px; overflow:auto; border:1px solid #ddd; border-radius:6px; padding:6px; background:#fff; margin-top:8px;"></div>
@@ -142,7 +141,6 @@ function bindStaticEvents() {
   const searchBtn = document.getElementById("search-btn");
   const searchInput = document.getElementById("search-word");
   const testBtn = document.getElementById("show-test");
-  const addTestBtn = document.getElementById("add-test");
   const filterChk = document.getElementById("filter-pending");
   if (filterChk) {
     filterChk.checked = showOnlyPending;
@@ -158,14 +156,16 @@ function bindStaticEvents() {
     });
   }
   if (testBtn) testBtn.onclick = toggleTestOverlay;
-  if (addTestBtn) addTestBtn.onclick = addTestWordsPrompt;
 }
 
 async function addTestWordsPrompt() {
-  const txt = prompt("Paraules a afegir (separa per comes)", "");
+  const txt = prompt(
+    "Paraules a afegir (separa per comes o salts de línia)",
+    ""
+  );
   if (txt === null) return;
   const parts = txt
-    .split(/[,\n]/)
+    .split(/[\n,]/)
     .map((s) => s.trim())
     .filter((s) => s.length);
   if (!parts.length) return;
@@ -236,15 +236,18 @@ async function loadTestOverlayData() {
       .join("");
     overlay.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
       <strong class="small">Paraules test (${data.count})</strong>
-      <div class=\"btn-group btn-group-sm\" role=\"group\">
-        <button class=\"btn btn-outline-secondary\" id=\"toggle-test-select\" title=\"Mode selecció\">Sel</button>
-        <button class=\"btn btn-outline-danger\" id=\"delete-selected-test\" style=\"display:none;\" title=\"Elimina seleccionades\">Del</button>
-        <button class=\"btn btn-outline-secondary\" id=\"close-test\" title=\"Tanca\">✕</button>
+      <div class="btn-group btn-group-sm" role="group">
+        <button class="btn btn-outline-success" id="add-test-inside" title="Afegeix paraules al test">+Add</button>
+        <button class="btn btn-outline-secondary" id="toggle-test-select" title="Mode selecció">Sel</button>
+        <button class="btn btn-outline-danger" id="delete-selected-test" style="display:none;" title="Elimina seleccionades">Del</button>
+        <button class="btn btn-outline-secondary" id="close-test" title="Tanca">✕</button>
       </div>
-    </div><div class=\"test-body\" id=\"test-body\" style=\"font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;\">${rows}</div>`;
+    </div><div class="test-body" id="test-body" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${rows}</div>`;
     const closeBtn = document.getElementById("close-test");
     if (closeBtn) closeBtn.onclick = () => hideTestOverlay();
     initTestWordSelection();
+    const addInside = document.getElementById("add-test-inside");
+    if (addInside) addInside.onclick = addTestWordsPrompt;
     overlay.querySelectorAll("a.jump").forEach((a) => {
       a.addEventListener("click", async (e) => {
         e.preventDefault();

@@ -168,3 +168,8 @@
   min-width: 340px;
   box-shadow: 0 2px 16px rgba(0,0,0,0.13);
 }
+
+/* Test overlay selection */
+.test-body.select-mode .test-row { cursor: pointer; }
+.test-body .test-row.selected { background: #ffe9b3; border-radius:4px; }
+.test-body .test-row { padding:2px 4px; }
