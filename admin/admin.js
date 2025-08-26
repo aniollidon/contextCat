@@ -60,6 +60,8 @@ let confirmDelete = null;
 let lastMoveInfo = null; // {word, toPos}
 let validations = {}; // filename -> true
 let showOnlyPending = false; // filtre de fitxers no validats
+let autoSaveTimer = null; // temporitzador per auto-desat
+const AUTO_SAVE_DELAY = 800; // ms després de l'últim canvi de drag
 
 // Highlight temporal helper (classe configurable)
 function tempHighlightElement(el, ms = 1000, cls = "moved") {
@@ -115,7 +117,7 @@ function renderApp() {
           <div class="paper">
             <div class="d-flex align-items-center justify-content-between mb-2">
               <h5 class="mb-0">Paraules</h5>
-              <button class="btn btn-warning btn-sm fw-bold" id="save-file" style="display:none;">Desa canvis!</button>
+              <span id="autosave-status" class="text-muted small" style="display:none;">Desant…</span>
             </div>
             <div class="input-group input-group-sm mb-2">
               <input id="search-word" type="text" class="form-control" placeholder="Cerca paraula..." />
@@ -134,7 +136,6 @@ function renderApp() {
 
 function bindStaticEvents() {
   document.getElementById("create-file").onclick = createFile;
-  document.getElementById("save-file").onclick = saveFile;
   const searchBtn = document.getElementById("search-btn");
   const searchInput = document.getElementById("search-word");
   const filterChk = document.getElementById("filter-pending");
@@ -265,13 +266,11 @@ function renderWordsArea() {
   if (!selected) {
     area.innerHTML =
       '<div style="color:#888">Selecciona un fitxer per veure les paraules.</div>';
-    document.getElementById("save-file").style.display = "none";
     return;
   }
   if (loading) {
     area.innerHTML =
       '<div style="text-align:center;padding:32px"><span>Carregant...</span></div>';
-    document.getElementById("save-file").style.display = "none";
     return;
   }
   const wordList = document.createElement("div");
@@ -369,8 +368,7 @@ function renderWordsArea() {
     area.appendChild(indicator);
   }
   // Botó de desar
-  const saveBtn = document.getElementById("save-file");
-  saveBtn.style.display = dirty ? "inline-block" : "none";
+  // ja no cal botó; auto-save
 }
 
 // Drag & drop
@@ -417,6 +415,7 @@ function onDrop(e, pos, item) {
     const wordItems = document.querySelectorAll(".word-item");
     if (wordItems[toIndex]) tempHighlightElement(wordItems[toIndex]);
   }, 0);
+  scheduleAutoSave();
 }
 
 // Menú contextual
@@ -578,6 +577,8 @@ async function handleDeleteWord() {
     // Si la paraula eliminada era part de lastMoveInfo, neteja
     if (lastMoveInfo && lastMoveInfo.toPos === pos) lastMoveInfo = null;
     renderWordsArea();
+    // Una eliminació no necessita desat addicional (ja està persistit), però marquem estat
+    showAutoSaveDone();
   } catch (e) {
     alert(e.message);
   }
@@ -805,20 +806,50 @@ function saveFile() {
   while (wordsByPos[contiguousEnd]) contiguousEnd++;
   const ranking = {};
   for (let i = 0; i < contiguousEnd; i++) ranking[wordsByPos[i].word] = i;
+  const status = document.getElementById("autosave-status");
+  if (status) {
+    status.style.display = "inline";
+    status.textContent = "Desant…";
+  }
   fetch(`${RANKINGS_API}/${selected}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ fragment: ranking, offset: 0 }),
-  }).then(() => {
-    dirty = false;
-    renderWordsArea();
-    // Elimina la marca groga de tots els ítems
+  })
+    .then(() => {
+      dirty = false;
+      showAutoSaveDone();
+    })
+    .catch(() => {
+      if (status) {
+        status.style.display = "inline";
+        status.textContent = "Error desant";
+      }
+    });
+}
+
+function scheduleAutoSave() {
+  if (!dirty) return; // res a desar
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    saveFile();
+  }, AUTO_SAVE_DELAY);
+  const status = document.getElementById("autosave-status");
+  if (status) {
+    status.style.display = "inline";
+    status.textContent = "Pendents de desar…";
+  }
+}
+
+function showAutoSaveDone() {
+  const status = document.getElementById("autosave-status");
+  if (status) {
+    status.style.display = "inline";
+    status.textContent = "Desat";
     setTimeout(() => {
-      document
-        .querySelectorAll(".word-item.moved")
-        .forEach((el) => el.classList.remove("moved"));
-    }, 0);
-  });
+      if (status.textContent === "Desat") status.style.display = "none";
+    }, 2000);
+  }
 }
 
 // Carregar més paraules
