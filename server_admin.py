@@ -63,6 +63,14 @@ class RandomGenerateRequest(BaseModel):
 class AuthRequest(BaseModel):
     password: str
 
+class AddTestWordsRequest(BaseModel):
+    # Accept either a single word or a list of words. Both optional but at least one must appear.
+    word: str | None = None
+    words: list[str] | None = None
+
+class DeleteTestWordsRequest(BaseModel):
+    words: list[str]
+
 def require_auth(request: Request):
     if not ADMIN_PASSWORD:
         return  # no password set -> open
@@ -338,6 +346,80 @@ def ranking_test_words(filename: str, _: None = Depends(require_auth)):
         else:
             out.append({"word": w, "found": False})
     return {"count": len(out), "words": out}
+
+@app.post("/api/test-words")
+def add_test_words(req: AddTestWordsRequest, _: None = Depends(require_auth)):
+    """Afegeix paraules al fitxer data/test.json (evitant duplicats). Accepta 'word' o 'words'."""
+    test_path = Path(__file__).parent / "data" / "test.json"
+    if test_path.exists():
+        try:
+            with open(test_path, encoding="utf-8") as f:
+                current = json.load(f)
+            if not isinstance(current, list):
+                current = []
+        except Exception:
+            current = []
+    else:
+        current = []
+    new_words = []
+    if req.word:
+        new_words.append(req.word)
+    if req.words:
+        new_words.extend(req.words)
+    # Normalize, filter empties
+    cleaned = []
+    for w in new_words:
+        if not isinstance(w, str):
+            continue
+        wl = w.strip().lower()
+        if wl:
+            cleaned.append(wl)
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Cap paraula vàlida")
+    existing_set = {str(w).strip().lower() for w in current if isinstance(w, str)}
+    added = []
+    for w in cleaned:
+        if w not in existing_set:
+            current.append(w)
+            existing_set.add(w)
+            added.append(w)
+    try:
+        with open(test_path, 'w', encoding='utf-8') as f:
+            json.dump(current, f, ensure_ascii=False, indent=2)
+    except Exception:
+        raise HTTPException(status_code=500, detail="No s'ha pogut desar test.json")
+    return {"ok": True, "added": added, "total": len(current)}
+
+@app.post("/api/test-words/delete")
+def delete_test_words(req: DeleteTestWordsRequest, _: None = Depends(require_auth)):
+    """Elimina paraules de data/test.json (ignora les que no existeixin)."""
+    test_path = Path(__file__).parent / "data" / "test.json"
+    if not test_path.exists():
+        raise HTTPException(status_code=404, detail="test.json no trobat")
+    try:
+        with open(test_path, encoding="utf-8") as f:
+            current = json.load(f)
+        if not isinstance(current, list):
+            raise Exception()
+    except Exception:
+        raise HTTPException(status_code=500, detail="Format test.json invàlid")
+    target = {w.strip().lower() for w in req.words if isinstance(w, str)}
+    if not target:
+        raise HTTPException(status_code=400, detail="Cap paraula a eliminar")
+    new_list = []
+    removed = []
+    for w in current:
+        wl = str(w).strip().lower()
+        if wl in target:
+            removed.append(wl)
+        else:
+            new_list.append(w)
+    try:
+        with open(test_path, 'w', encoding='utf-8') as f:
+            json.dump(new_list, f, ensure_ascii=False, indent=2)
+    except Exception:
+        raise HTTPException(status_code=500, detail="No s'ha pogut desar test.json")
+    return {"ok": True, "removed": removed, "total": len(new_list)}
 
 @app.delete("/api/rankings/{filename}/word/{pos}")
 def delete_word(filename: str, pos: int, _: None = Depends(require_auth)):

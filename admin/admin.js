@@ -123,6 +123,7 @@ function renderApp() {
               <input id="search-word" type="text" class="form-control" placeholder="Cerca paraula..." />
               <button class="btn btn-outline-secondary" id="search-btn" type="button" title="Cerca">Cerca</button>
               <button class="btn btn-outline-info" id="show-test" type="button" title="Mostra paraules test">Test</button>
+               <button class="btn btn-outline-success" id="add-test" type="button" title="Afegeix paraules al test (separa per comes)">+Test</button>
             </div>
             <div id="words-area" style="min-height:120px;"></div>
             <div id="test-overlay" style="display:none; max-height:220px; overflow:auto; border:1px solid #ddd; border-radius:6px; padding:6px; background:#fff; margin-top:8px;"></div>
@@ -141,6 +142,7 @@ function bindStaticEvents() {
   const searchBtn = document.getElementById("search-btn");
   const searchInput = document.getElementById("search-word");
   const testBtn = document.getElementById("show-test");
+  const addTestBtn = document.getElementById("add-test");
   const filterChk = document.getElementById("filter-pending");
   if (filterChk) {
     filterChk.checked = showOnlyPending;
@@ -156,6 +158,34 @@ function bindStaticEvents() {
     });
   }
   if (testBtn) testBtn.onclick = toggleTestOverlay;
+  if (addTestBtn) addTestBtn.onclick = addTestWordsPrompt;
+}
+
+async function addTestWordsPrompt() {
+  const txt = prompt("Paraules a afegir (separa per comes)", "");
+  if (txt === null) return;
+  const parts = txt
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length);
+  if (!parts.length) return;
+  try {
+    const res = await fetch(`${API_BASE}/test-words`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ words: parts }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Error" }));
+      alert(err.detail || "Error afegint");
+      return;
+    }
+    const data = await res.json();
+    alert(`Afegides ${data.added.length} (total ${data.total})`);
+    refreshTestOverlayIfVisible();
+  } catch (e) {
+    alert("Error de xarxa");
+  }
 }
 
 let testVisible = false;
@@ -206,10 +236,15 @@ async function loadTestOverlayData() {
       .join("");
     overlay.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
       <strong class="small">Paraules test (${data.count})</strong>
-      <button class="btn btn-sm btn-outline-secondary" id="close-test">Tanca</button>
-    </div><div class="test-body" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${rows}</div>`;
+      <div class=\"btn-group btn-group-sm\" role=\"group\">
+        <button class=\"btn btn-outline-secondary\" id=\"toggle-test-select\" title=\"Mode selecció\">Sel</button>
+        <button class=\"btn btn-outline-danger\" id=\"delete-selected-test\" style=\"display:none;\" title=\"Elimina seleccionades\">Del</button>
+        <button class=\"btn btn-outline-secondary\" id=\"close-test\" title=\"Tanca\">✕</button>
+      </div>
+    </div><div class=\"test-body\" id=\"test-body\" style=\"font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;\">${rows}</div>`;
     const closeBtn = document.getElementById("close-test");
     if (closeBtn) closeBtn.onclick = () => hideTestOverlay();
+    initTestWordSelection();
     overlay.querySelectorAll("a.jump").forEach((a) => {
       a.addEventListener("click", async (e) => {
         e.preventDefault();
@@ -229,6 +264,81 @@ async function loadTestOverlayData() {
 
 function refreshTestOverlayIfVisible() {
   if (testVisible) loadTestOverlayData();
+}
+
+// --- Selecció discreta per eliminar paraules test ---
+let testSelectMode = false;
+let selectedTestWords = new Set();
+function initTestWordSelection() {
+  const toggleBtn = document.getElementById("toggle-test-select");
+  const delBtn = document.getElementById("delete-selected-test");
+  const body = document.getElementById("test-body");
+  if (!toggleBtn || !delBtn || !body) return;
+  toggleBtn.onclick = () => {
+    testSelectMode = !testSelectMode;
+    selectedTestWords.clear();
+    updateTestSelectionUI();
+  };
+  delBtn.onclick = async () => {
+    if (!selectedTestWords.size) return;
+    if (!confirm(`Eliminar ${selectedTestWords.size} paraules del test?`))
+      return;
+    try {
+      const res = await fetch(`${API_BASE}/test-words/delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ words: Array.from(selectedTestWords) }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Error" }));
+        alert(err.detail || "Error eliminant");
+        return;
+      }
+      selectedTestWords.clear();
+      testSelectMode = false;
+      await loadTestOverlayData();
+    } catch (e) {
+      alert("Error de xarxa");
+    }
+  };
+  body.querySelectorAll(".test-row").forEach((row) => {
+    row.addEventListener("click", (e) => {
+      if (!testSelectMode) return;
+      const text = row.querySelector("span");
+      if (!text) return;
+      const raw = text.textContent.trim();
+      const w = raw.split(/\s+/)[0].replace(/\.$/, "");
+      if (selectedTestWords.has(w)) selectedTestWords.delete(w);
+      else selectedTestWords.add(w);
+      updateTestSelectionUI();
+    });
+  });
+  updateTestSelectionUI();
+}
+function updateTestSelectionUI() {
+  const body = document.getElementById("test-body");
+  const toggleBtn = document.getElementById("toggle-test-select");
+  const delBtn = document.getElementById("delete-selected-test");
+  if (!body || !toggleBtn || !delBtn) return;
+  if (!testSelectMode) {
+    body.classList.remove("select-mode");
+    delBtn.style.display = "none";
+    toggleBtn.classList.remove("active");
+    body
+      .querySelectorAll(".test-row")
+      .forEach((r) => r.classList.remove("selected"));
+    return;
+  }
+  toggleBtn.classList.add("active");
+  body.classList.add("select-mode");
+  delBtn.style.display = selectedTestWords.size ? "inline-block" : "none";
+  body.querySelectorAll(".test-row").forEach((r) => {
+    const text = r.querySelector("span");
+    if (!text) return;
+    const w = text.textContent.trim().split(/\s+/)[0].replace(/\.$/, "");
+    if (selectedTestWords.has(w)) r.classList.add("selected");
+    else r.classList.remove("selected");
+  });
 }
 
 function fetchFiles() {
