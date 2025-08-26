@@ -10,7 +10,7 @@ const AUTH_ENDPOINT = `${API_BASE}/auth`;
 const GENERATE_ENDPOINT = `${API_BASE}/generate`; // alternatiu
 const GENERATE_RANDOM_ENDPOINT = `${API_BASE}/generate-random`;
 // Page size per a càrrega de fragments
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 300;
 // Diccionari (obertura en nova pestanya). Substituïm [PARAULA]
 const DICT_URL_TEMPLATE =
   "https://www.diccionari.cat/cerca/gran-diccionari-de-la-llengua-catalana?search_api_fulltext_cust=[PARAULA]";
