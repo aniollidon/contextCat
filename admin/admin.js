@@ -1,7 +1,16 @@
 // Configuració
-const API = "http://localhost:5001/api/rankings";
+const PORT = 3000; // Port on corre el backend admin (uvicorn)
+// Arrel del servidor (es pot sobreescriure abans de carregar aquest script definint window.CONTEXTCAT_SERVER)
+const SERVER = `http://5.250.190.223:${PORT}`;
+// Bases d'API
+const API_BASE = `${SERVER}/api`;
+const RANKINGS_API = `${API_BASE}/rankings`;
+const VALIDATIONS_API = `${API_BASE}/validations`;
+const AUTH_ENDPOINT = `${API_BASE}/auth`;
+const GENERATE_ENDPOINT = `${API_BASE}/generate`; // alternatiu
+const GENERATE_RANDOM_ENDPOINT = `${API_BASE}/generate-random`;
+// Page size per a càrrega de fragments
 const PAGE_SIZE = 100;
-const AUTH_ENDPOINT = "http://localhost:5001/api/auth";
 
 let adminToken = null; // guardem la contrasenya (x-admin-token)
 
@@ -144,8 +153,10 @@ function bindStaticEvents() {
 function fetchFiles() {
   // Carrega llistat i validacions en paral·lel
   Promise.all([
-    fetch(API, { headers: { ...authHeaders() } }).then((r) => r.json()),
-    fetch("http://localhost:5001/api/validations", {
+    fetch(RANKINGS_API, { headers: { ...authHeaders() } }).then((r) =>
+      r.json()
+    ),
+    fetch(VALIDATIONS_API, {
       headers: { ...authHeaders() },
     }).then((r) => r.json()),
   ]).then(([flist, vals]) => {
@@ -182,7 +193,7 @@ function renderFileList() {
     chk.addEventListener("click", (e) => {
       e.stopPropagation();
       const newVal = e.target.checked;
-      fetch(`http://localhost:5001/api/validations/${f}`, {
+      fetch(`${VALIDATIONS_API}/${f}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ validated: newVal }),
@@ -225,7 +236,7 @@ function loadFile(filename) {
   lastMoveInfo = null;
   renderFileList();
   renderWordsArea();
-  fetch(`${API}/${filename}?offset=0&limit=${PAGE_SIZE}`, {
+  fetch(`${RANKINGS_API}/${filename}?offset=0&limit=${PAGE_SIZE}`, {
     headers: { ...authHeaders() },
   })
     .then((res) => res.json())
@@ -499,7 +510,7 @@ async function handleDeleteWord() {
   const confirmMsg = `Segur que vols eliminar la paraula '${wordLabel}' de la llista? en cercar aquesta paraula aquell dia sortirà com a no present al diccionari.`;
   if (!confirm(confirmMsg)) return;
   try {
-    const res = await fetch(`${API}/${selected}/word/${pos}`, {
+    const res = await fetch(`${RANKINGS_API}/${selected}/word/${pos}`, {
       method: "DELETE",
       headers: { ...authHeaders() },
     });
@@ -522,7 +533,7 @@ async function handleDeleteWord() {
 }
 
 async function moveAbsolute(fromPos, toPos) {
-  const res = await fetch(`${API}/${selected}/move`, {
+  const res = await fetch(`${RANKINGS_API}/${selected}/move`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ from_pos: fromPos, to_pos: toPos }),
@@ -543,9 +554,12 @@ async function moveAbsolute(fromPos, toPos) {
 }
 
 async function reloadInitialBlock() {
-  const res = await fetch(`${API}/${selected}?offset=0&limit=${PAGE_SIZE}`, {
-    headers: { ...authHeaders() },
-  });
+  const res = await fetch(
+    `${RANKINGS_API}/${selected}?offset=0&limit=${PAGE_SIZE}`,
+    {
+      headers: { ...authHeaders() },
+    }
+  );
   const data = await res.json();
   // Esborra bloc inicial anterior
   let i = 0;
@@ -582,7 +596,7 @@ async function ensureVisible(pos, options = {}) {
     applyHighlight();
     return;
   }
-  const res = await fetch(`${API}/${selected}?offset=${pos}&limit=1`, {
+  const res = await fetch(`${RANKINGS_API}/${selected}?offset=${pos}&limit=1`, {
     headers: { ...authHeaders() },
   });
   const data = await res.json();
@@ -605,7 +619,7 @@ function createFile() {
   if (!cleaned) return;
   // Crida endpoint de generació
   // Fem servir endpoint alternatiu per evitar confusions amb path params
-  fetch(`http://localhost:5001/api/generate`, {
+  fetch(GENERATE_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ word: cleaned }),
@@ -635,7 +649,7 @@ function createRandom() {
   const statusEl = document.getElementById("random-status");
   statusEl.style.display = "block";
   statusEl.textContent = "Generant 10 paraules aleatòries...";
-  fetch(`http://localhost:5001/api/generate-random`, {
+  fetch(GENERATE_RANDOM_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ count: 10 }),
@@ -706,7 +720,7 @@ function renderDialog() {
     deleteFile(confirmDelete);
 }
 function deleteFile(filename) {
-  fetch(`${API}/${filename}`, {
+  fetch(`${RANKINGS_API}/${filename}`, {
     method: "DELETE",
     headers: { ...authHeaders() },
   }).then(() => {
@@ -730,7 +744,7 @@ function saveFile() {
   while (wordsByPos[contiguousEnd]) contiguousEnd++;
   const ranking = {};
   for (let i = 0; i < contiguousEnd; i++) ranking[wordsByPos[i].word] = i;
-  fetch(`${API}/${selected}`, {
+  fetch(`${RANKINGS_API}/${selected}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ fragment: ranking, offset: 0 }),
@@ -757,7 +771,7 @@ function loadMoreGap(start, endKnown) {
   // Registra fins on arribava el bloc contigu abans de carregar
   let oldContiguousEnd = 0;
   while (wordsByPos[oldContiguousEnd]) oldContiguousEnd++;
-  fetch(`${API}/${selected}?offset=${start}&limit=${limit}`, {
+  fetch(`${RANKINGS_API}/${selected}?offset=${start}&limit=${limit}`, {
     headers: { ...authHeaders() },
   })
     .then((res) => res.json())
@@ -793,7 +807,7 @@ function triggerSearch(term) {
   if (!selected) return;
   const t = term.trim().toLowerCase();
   if (!t) return;
-  fetch(`${API}/${selected}/find?word=${encodeURIComponent(t)}`, {
+  fetch(`${RANKINGS_API}/${selected}/find?word=${encodeURIComponent(t)}`, {
     headers: { ...authHeaders() },
   })
     .then((r) => r.json())
