@@ -284,7 +284,11 @@ function initTestWordSelection() {
   };
   delBtn.onclick = async () => {
     if (!selectedTestWords.size) return;
-    if (!confirm(`Eliminar ${selectedTestWords.size} paraules del test?`))
+    if (
+      !confirm(
+        `Eliminar ${selectedTestWords.size} paraules del test? s'esborraran per totes les paraules`
+      )
+    )
       return;
     try {
       const res = await fetch(`${API_BASE}/test-words/delete`, {
