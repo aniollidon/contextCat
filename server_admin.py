@@ -323,9 +323,27 @@ def delete_word(filename: str, pos: int, _: None = Depends(require_auth)):
 
 if __name__ == "__main__":
     import sys
+    import argparse
+    parser = argparse.ArgumentParser(description="Server admin ContextCat")
+    parser.add_argument("--frontend", action="store_true", help="Serveix també el frontend d'administració (carpeta /admin) a /admin")
+    args = parser.parse_args()
     try:
         import uvicorn
-        uvicorn.run("server_admin:app", host="0.0.0.0", port=ADMIN_PORT, reload=False)
+        if args.frontend:
+            from fastapi.staticfiles import StaticFiles
+            from fastapi.responses import RedirectResponse
+            admin_dir = Path(__file__).parent / "admin"
+            if admin_dir.exists():
+                # Munta els fitxers estàtics a /admin
+                app.mount("/admin", StaticFiles(directory=str(admin_dir), html=True), name="admin")
+                # Redirecció arrel -> /admin/
+                @app.get("/")
+                def _root_redirect():
+                    return RedirectResponse(url="/admin/", status_code=307)
+            else:
+                print("[WARN] Carpeta 'admin' no trobada; no es servirà el frontend.")
+        # Executa servidor
+        uvicorn.run(app, host="0.0.0.0", port=ADMIN_PORT, reload=False)
     except ImportError:
         print("Uvicorn no està instal·lat. Instal·la'l amb: pip install uvicorn[standard]")
         sys.exit(1)
