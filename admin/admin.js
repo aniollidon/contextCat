@@ -1,0 +1,808 @@
+// Configuració
+const API = "http://localhost:5001/api/rankings";
+const PAGE_SIZE = 100;
+const AUTH_ENDPOINT = "http://localhost:5001/api/auth";
+
+let adminToken = null; // guardem la contrasenya (x-admin-token)
+
+async function ensureAuthenticated() {
+  if (adminToken) return true;
+  const pwd = prompt("Contrasenya admin:", "");
+  if (pwd === null) return false;
+  try {
+    const res = await fetch(AUTH_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pwd }),
+    });
+    if (!res.ok) throw new Error("Auth failed");
+    const data = await res.json();
+    if (data.ok) {
+      adminToken = pwd; // s'utilitza com a token simple
+      return true;
+    }
+  } catch (_) {
+    alert("Contrasenya incorrecta");
+  }
+  return ensureAuthenticated(); // reintenta fins cancel·lar
+}
+
+function authHeaders() {
+  return adminToken ? { "x-admin-token": adminToken } : {};
+}
+
+// Estat global
+let files = [];
+let selected = null;
+// Nou model: paraules carregades per posició absoluta (sparse)
+let wordsByPos = {}; // pos -> {word,pos}
+// offset ja no s'utilitza per la finestra lliscant, però el mantenim per compatibilitat amb codi antic (guardat)
+let offset = 0; // sempre 0 per al fragment que desem
+let total = 0;
+let loading = false;
+let dirty = false;
+let menuIdx = null;
+let menuAnchor = null;
+let confirmDelete = null;
+// Guarda informació de l'últim moviment
+let lastMoveInfo = null; // {word, toPos}
+let validations = {}; // filename -> true
+let showOnlyPending = false; // filtre de fitxers no validats
+
+// Highlight temporal helper (classe configurable)
+function tempHighlightElement(el, ms = 1000, cls = "moved") {
+  if (!el) return;
+  el.classList.add(cls);
+  setTimeout(() => {
+    if (el.classList) el.classList.remove(cls);
+  }, ms);
+}
+
+// Color segons posició
+function colorPerPos(posicio) {
+  if (posicio < 100) return "#4caf50"; // Verd
+  if (posicio < 250) return "#ffc107"; // Groc
+  if (posicio < 500) return "#ff9800"; // Taronja
+  if (posicio < 2000) return "#f44336"; // Vermell
+  return "#9e9e9e"; // Gris per la resta
+}
+
+// Render inicial
+document.addEventListener("DOMContentLoaded", async () => {
+  renderApp();
+  const ok = await ensureAuthenticated();
+  if (ok) fetchFiles();
+});
+
+function renderApp() {
+  const app = document.getElementById("app");
+  app.innerHTML = `
+    <div class="container py-4">
+      <div class="row mb-4">
+        <div class="col-12 text-center">
+          <h2 class="fw-bold mb-2">Gestió ContextCat</h2>
+        </div>
+      </div>
+      <div class="row g-4">
+        <div class="col-md-4">
+          <div class="paper">
+            <h5 class="mb-3">Fitxers</h5>
+            <div class="d-flex align-items-center gap-2 mb-2 small">
+              <input type="checkbox" id="filter-pending" class="form-check-input" />
+              <label for="filter-pending" id="filter-pending-label" class="form-check-label" style="cursor:pointer;">Només pendents</label>
+            </div>
+            <ul class="file-list" id="file-list"></ul>
+            <div class="d-grid mt-3 gap-2">
+              <button class="btn btn-primary" id="create-file" type="button">Crear rànquing…</button>
+              <button class="btn btn-outline-primary" id="create-random" type="button" title="Genera 10 paraules aleatòries (pot trigar)">Generar 10 aleatòries…</button>
+              <small id="random-status" class="text-muted" style="display:none;">Generant... pot trigar uns segons.</small>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-8">
+          <div class="paper">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h5 class="mb-0">Paraules</h5>
+              <button class="btn btn-warning btn-sm fw-bold" id="save-file" style="display:none;">Desa canvis!</button>
+            </div>
+            <div class="input-group input-group-sm mb-2">
+              <input id="search-word" type="text" class="form-control" placeholder="Cerca paraula..." />
+              <button class="btn btn-outline-secondary" id="search-btn" type="button" title="Cerca">Cerca</button>
+            </div>
+            <div id="words-area" style="min-height:120px;"></div>
+          </div>
+        </div>
+      </div>
+      <div id="dialog-root"></div>
+      <div id="menu-root"></div>
+    </div>
+  `;
+  bindStaticEvents();
+}
+
+function bindStaticEvents() {
+  document.getElementById("create-file").onclick = createFile;
+  document.getElementById("save-file").onclick = saveFile;
+  const searchBtn = document.getElementById("search-btn");
+  const searchInput = document.getElementById("search-word");
+  const filterChk = document.getElementById("filter-pending");
+  if (filterChk) {
+    filterChk.checked = showOnlyPending;
+    filterChk.onchange = () => {
+      showOnlyPending = filterChk.checked;
+      renderFileList();
+    };
+  }
+  if (searchBtn) searchBtn.onclick = () => triggerSearch(searchInput.value);
+  if (searchInput) {
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") triggerSearch(searchInput.value);
+    });
+  }
+}
+
+function fetchFiles() {
+  // Carrega llistat i validacions en paral·lel
+  Promise.all([
+    fetch(API, { headers: { ...authHeaders() } }).then((r) => r.json()),
+    fetch("http://localhost:5001/api/validations", {
+      headers: { ...authHeaders() },
+    }).then((r) => r.json()),
+  ]).then(([flist, vals]) => {
+    files = flist;
+    validations = vals || {};
+    renderFileList();
+  });
+}
+
+function renderFileList() {
+  const ul = document.getElementById("file-list");
+  ul.innerHTML = "";
+  files.forEach((f) => {
+    const isValidated = !!validations[f];
+    if (showOnlyPending && isValidated) return;
+    const li = document.createElement("li");
+    li.className = "list-item" + (selected === f ? " selected" : "");
+    // Nom del fitxer
+    const span = document.createElement("span");
+    span.style.flex = "1";
+    const chkId = `val-${f}`;
+    const checked = !!validations[f];
+    span.innerHTML = `
+      <input type="checkbox" class="form-check-input me-2 validate-chk" id="${chkId}" ${
+      checked ? "checked" : ""
+    } title="Marca com a fet" />
+      <label for="${chkId}" class="form-check-label" style="cursor:pointer;">${f}</label>
+    `;
+    li.appendChild(span);
+    li.onclick = () => loadFile(f);
+    // Checkbox toggle (aturar propagació per no carregar el fitxer automàticament)
+    const chk = span.querySelector("input");
+    if (checked) chk.classList.add("validated-yes");
+    chk.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const newVal = e.target.checked;
+      fetch(`http://localhost:5001/api/validations/${f}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ validated: newVal }),
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error();
+          if (newVal) {
+            validations[f] = true;
+            chk.classList.add("validated-yes");
+          } else {
+            delete validations[f];
+            chk.classList.remove("validated-yes");
+          }
+          if (showOnlyPending && newVal) renderFileList();
+        })
+        .catch(() => {
+          e.target.checked = !newVal; // revert
+          alert("Error desant validació");
+        });
+    });
+    // Delete button amb icona Bootstrap
+    const del = document.createElement("button");
+    del.className = "icon-btn";
+    del.title = "Esborra";
+    del.innerHTML = '<i class="bi bi-trash"></i>';
+    del.onclick = (e) => {
+      e.stopPropagation();
+      showDeleteDialog(f);
+    };
+    li.appendChild(del);
+    ul.appendChild(li);
+  });
+}
+
+function loadFile(filename) {
+  selected = filename;
+  wordsByPos = {};
+  dirty = false;
+  loading = true;
+  lastMoveInfo = null;
+  renderFileList();
+  renderWordsArea();
+  fetch(`${API}/${filename}?offset=0&limit=${PAGE_SIZE}`, {
+    headers: { ...authHeaders() },
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      data.words.forEach((w) => (wordsByPos[w.pos] = w));
+      total = data.total;
+      loading = false;
+      renderWordsArea();
+    });
+}
+
+function renderWordsArea() {
+  const area = document.getElementById("words-area");
+  // Guarda scroll actual (si existeix llista) per evitar saltar a l'esquerra en re-render
+  let prevScrollLeft = 0;
+  let prevScrollTop = 0;
+  const existingList = area.querySelector(".word-list");
+  if (existingList) {
+    prevScrollLeft = existingList.scrollLeft;
+    prevScrollTop = existingList.scrollTop;
+  }
+  area.innerHTML = "";
+  if (!selected) {
+    area.innerHTML =
+      '<div style="color:#888">Selecciona un fitxer per veure les paraules.</div>';
+    document.getElementById("save-file").style.display = "none";
+    return;
+  }
+  if (loading) {
+    area.innerHTML =
+      '<div style="text-align:center;padding:32px"><span>Carregant...</span></div>';
+    document.getElementById("save-file").style.display = "none";
+    return;
+  }
+  const wordList = document.createElement("div");
+  wordList.className = "word-list";
+  const positions = Object.keys(wordsByPos)
+    .map(Number)
+    .sort((a, b) => a - b);
+  let contiguousEnd = 0; // primer index no carregat començant per 0
+  while (wordsByPos[contiguousEnd]) contiguousEnd++;
+
+  const createWordItem = (pos) => {
+    const w = wordsByPos[pos];
+    const item = document.createElement("div");
+    const isFirst = pos === 0;
+    const draggableAllowed = !isFirst && pos < contiguousEnd;
+    item.className = "word-item" + (draggableAllowed ? " draggable" : "");
+    const txt = document.createElement("span");
+    txt.className = "word-text";
+    txt.textContent = `${pos}. ${w.word}`;
+    txt.title = `${pos}. ${w.word}`;
+    txt.style.color = colorPerPos(pos);
+    item.appendChild(txt);
+    if (!isFirst) {
+      const menuBtn = document.createElement("button");
+      menuBtn.className = "icon-btn";
+      menuBtn.innerHTML = '<i class="bi bi-three-dots-vertical"></i>';
+      menuBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showMenu(e, pos);
+      };
+      menuBtn.onmousedown = (e) => e.stopPropagation();
+      item.appendChild(menuBtn);
+    }
+    if (draggableAllowed) {
+      item.draggable = true;
+      item.addEventListener("dragstart", (e) => onDragStart(e, pos, item));
+      item.addEventListener("dragend", (e) => onDragEnd(e, item));
+      item.addEventListener("dragover", (e) => onDragOver(e, pos, item));
+      item.addEventListener("drop", (e) => onDrop(e, pos, item));
+    } else if (isFirst) {
+      item.style.height = "38px";
+      item.style.minHeight = "38px";
+      item.style.display = "flex";
+    }
+    return item;
+  };
+  const appendGapButton = (start, endKnown) => {
+    const item = document.createElement("div");
+    item.className = "word-item";
+    const btn = document.createElement("button");
+    btn.className = "btn btn-outline-secondary btn-sm w-100";
+    btn.textContent =
+      endKnown !== null ? `més [${start}-${endKnown}]` : `més [${start}...]`;
+    btn.onclick = (e) => {
+      e.preventDefault();
+      loadMoreGap(start, endKnown);
+    };
+    item.appendChild(btn);
+    wordList.appendChild(item);
+  };
+  let cursor = 0;
+  while (cursor < total) {
+    if (wordsByPos[cursor]) {
+      wordList.appendChild(createWordItem(cursor));
+      cursor++;
+      continue;
+    }
+    let nextLoaded = null;
+    for (let p of positions) {
+      if (p > cursor) {
+        nextLoaded = p;
+        break;
+      }
+    }
+    const endKnown = nextLoaded !== null ? nextLoaded - 1 : null;
+    appendGapButton(cursor, endKnown);
+    if (nextLoaded === null) break;
+    cursor = nextLoaded;
+  }
+  area.appendChild(wordList);
+  // Restaura scroll
+  wordList.scrollLeft = prevScrollLeft;
+  wordList.scrollTop = prevScrollTop;
+  // Indicador d'últim moviment si la posició no està carregada
+  if (lastMoveInfo && selected && !wordsByPos[lastMoveInfo.toPos]) {
+    const indicator = document.createElement("div");
+    indicator.className = "move-indicator";
+    indicator.innerHTML = `
+      <div class="alert alert-info p-2 mt-2 mb-0" style="cursor:pointer;">
+        Paraula moguda a posició ${lastMoveInfo.toPos}. Fes clic per mostrar-la.
+      </div>`;
+    indicator.onclick = () =>
+      ensureVisible(lastMoveInfo.toPos, { highlight: true, special: true });
+    area.appendChild(indicator);
+  }
+  // Botó de desar
+  const saveBtn = document.getElementById("save-file");
+  saveBtn.style.display = dirty ? "inline-block" : "none";
+}
+
+// Drag & drop
+let dragIdx = null;
+function onDragStart(e, pos, item) {
+  dragIdx = pos;
+  e.dataTransfer.effectAllowed = "move";
+  setTimeout(() => item.classList.add("dragging"), 0);
+}
+function onDragEnd(e, item) {
+  dragIdx = null;
+  item.classList.remove("dragging");
+  // Eliminar qualsevol drag-over restant
+  document
+    .querySelectorAll(".word-item.drag-over")
+    .forEach((el) => el.classList.remove("drag-over"));
+}
+function onDragOver(e, pos, item) {
+  e.preventDefault();
+  if (dragIdx === null || dragIdx === 0 || pos === 0 || dragIdx === pos) return;
+  document
+    .querySelectorAll(".word-item.drag-over")
+    .forEach((el) => el.classList.remove("drag-over"));
+  item.classList.add("drag-over");
+}
+function onDrop(e, pos, item) {
+  e.preventDefault();
+  if (dragIdx === null || dragIdx === 0 || pos === 0 || dragIdx === pos) return;
+  // Construïm bloc contigu inicial
+  let contiguousEnd = 0;
+  while (wordsByPos[contiguousEnd]) contiguousEnd++;
+  const arr = [];
+  for (let i = 0; i < contiguousEnd; i++) arr.push(wordsByPos[i]);
+  const fromIndex = dragIdx;
+  const toIndex = pos;
+  const [moved] = arr.splice(fromIndex, 1);
+  arr.splice(toIndex, 0, moved);
+  for (let i = 0; i < arr.length; i++)
+    wordsByPos[i] = { word: arr[i].word, pos: i };
+  dirty = true;
+  dragIdx = null;
+  renderWordsArea();
+  setTimeout(() => {
+    const wordItems = document.querySelectorAll(".word-item");
+    if (wordItems[toIndex]) tempHighlightElement(wordItems[toIndex]);
+  }, 0);
+}
+
+// Menú contextual
+function showMenu(e, pos) {
+  e.preventDefault();
+  closeMenu();
+  menuIdx = pos; // posició absoluta
+  menuAnchor = { x: e.clientX, y: e.clientY };
+  const menuRoot = document.getElementById("menu-root");
+  const menu = document.createElement("div");
+  menu.className = "menu";
+  menu.style.left = menuAnchor.x + "px";
+  menu.style.top = menuAnchor.y + "px";
+  menu.innerHTML = `
+		<div class="menu-item" id="move-to">Mou a posició…</div>
+		<div class="menu-item" id="move-end">Mou al final</div>
+		<div class="menu-item" id="delete-word" style="color:#c62828;">Elimina paraula…</div>
+	`;
+  menuRoot.appendChild(menu);
+  document.getElementById("move-to").onclick = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    handleMoveToPrompt();
+    closeMenu();
+  };
+  document.getElementById("move-end").onclick = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    handleSendToEndMenu();
+    closeMenu();
+  };
+  document.getElementById("delete-word").onclick = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    handleDeleteWord();
+    closeMenu();
+  };
+  // Només tanca el menú si es fa clic fora
+  setTimeout(() => {
+    // Abans era 'mousedown' i es tancava el menú abans que es disparessin els onClick dels ítems.
+    // Amb 'click' el listener del document s'executa DESPRÉS del click sobre l'element de menú,
+    // permetent que les accions (moure / enviar al final) funcionin.
+    document.addEventListener("click", closeMenu, { once: true });
+  }, 0);
+}
+function closeMenu() {
+  const menuRoot = document.getElementById("menu-root");
+  menuRoot.innerHTML = "";
+  menuIdx = null;
+  menuAnchor = null;
+}
+async function handleMoveToPrompt() {
+  if (menuIdx === null) return closeMenu();
+  const absoluteFrom = menuIdx;
+  let posStr = prompt(
+    `A quina posició vols moure aquesta paraula? (0 - ${total - 1})`,
+    ""
+  );
+  if (posStr === null) return closeMenu();
+  let target = parseInt(posStr, 10);
+  if (isNaN(target) || target < 0) target = 0;
+  if (target >= total) target = total - 1;
+  if (target === absoluteFrom) return closeMenu();
+  await moveAbsolute(absoluteFrom, target);
+  closeMenu();
+  await reloadInitialBlock();
+  await ensureVisible(target, {
+    highlight: true,
+    special: true,
+    force: target >= PAGE_SIZE,
+  });
+}
+async function handleSendToEndMenu() {
+  if (menuIdx === null) return closeMenu();
+  const absoluteFrom = menuIdx;
+  const target = total - 1;
+  if (target === absoluteFrom) return closeMenu();
+  await moveAbsolute(absoluteFrom, target);
+  closeMenu();
+  await reloadInitialBlock();
+  await ensureVisible(target, {
+    highlight: true,
+    special: true,
+    force: target >= PAGE_SIZE,
+  });
+}
+
+async function handleDeleteWord() {
+  if (menuIdx === null) return;
+  const pos = menuIdx;
+  if (!selected) return;
+  const wordObj = wordsByPos[pos];
+  const wordLabel = wordObj ? wordObj.word : `posició ${pos}`;
+  const confirmMsg = `Segur que vols eliminar la paraula '${wordLabel}' de la llista? en cercar aquesta paraula aquell dia sortirà com a no present al diccionari.`;
+  if (!confirm(confirmMsg)) return;
+  try {
+    const res = await fetch(`${API}/${selected}/word/${pos}`, {
+      method: "DELETE",
+      headers: { ...authHeaders() },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Error eliminant paraula");
+    }
+    const data = await res.json();
+    // Actualitza estat local: elimina la paraula i reindexa si cal el bloc inicial carregat
+    // Eliminem totes les posicions carregades >= pos fins trobar un forat i refetch fragment inicial
+    // Estratègia simple: recarregar bloc inicial i mantenir la resta (es podria optimitzar)
+    await reloadInitialBlock();
+    total = data.total;
+    // Si la paraula eliminada era part de lastMoveInfo, neteja
+    if (lastMoveInfo && lastMoveInfo.toPos === pos) lastMoveInfo = null;
+    renderWordsArea();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function moveAbsolute(fromPos, toPos) {
+  const res = await fetch(`${API}/${selected}/move`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ from_pos: fromPos, to_pos: toPos }),
+  });
+  try {
+    const data = await res.json();
+    if (data && data.word !== undefined && data.to !== undefined) {
+      lastMoveInfo = { word: data.word, toPos: data.to };
+    }
+  } catch (_) {
+    // ignore JSON parse errors
+  }
+  // Elimina la paraula de la posició antiga si la tenim carregada per evitar duplicats visuals
+  if (fromPos !== toPos && wordsByPos[fromPos]) {
+    delete wordsByPos[fromPos];
+  }
+  // El moviment ja s'ha desat al backend; no cal marcar dirty.
+}
+
+async function reloadInitialBlock() {
+  const res = await fetch(`${API}/${selected}?offset=0&limit=${PAGE_SIZE}`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  // Esborra bloc inicial anterior
+  let i = 0;
+  while (wordsByPos[i]) {
+    delete wordsByPos[i];
+    i++;
+  }
+  data.words.forEach((w) => (wordsByPos[w.pos] = w));
+  total = data.total;
+  renderWordsArea();
+}
+
+// options: {highlight, force, special}
+async function ensureVisible(pos, options = {}) {
+  const { highlight = false, force = false, special = false } = options;
+  if (force && wordsByPos[pos]) delete wordsByPos[pos];
+  const applyHighlight = () => {
+    if (!highlight) return;
+    setTimeout(() => {
+      const wordItems = document.querySelectorAll(".word-item");
+      wordItems.forEach((el) => {
+        if (
+          el.firstChild &&
+          el.firstChild.textContent &&
+          el.firstChild.textContent.startsWith(`${pos}.`)
+        ) {
+          tempHighlightElement(el, 1500, special ? "moved-special" : "moved");
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      });
+    }, 0);
+  };
+  if (wordsByPos[pos]) {
+    applyHighlight();
+    return;
+  }
+  const res = await fetch(`${API}/${selected}?offset=${pos}&limit=1`, {
+    headers: { ...authHeaders() },
+  });
+  const data = await res.json();
+  if (data.words && data.words[0])
+    wordsByPos[data.words[0].pos] = data.words[0];
+  renderWordsArea();
+  if (highlight && !force)
+    await ensureVisible(pos, { highlight: true, special });
+  else applyHighlight();
+}
+
+// Crear fitxer
+function createFile() {
+  const paraula = prompt(
+    "Paraula per generar rànquing (pot tardar una estona):",
+    ""
+  );
+  if (paraula === null) return; // cancel·lat
+  const cleaned = paraula.trim().toLowerCase();
+  if (!cleaned) return;
+  // Crida endpoint de generació
+  // Fem servir endpoint alternatiu per evitar confusions amb path params
+  fetch(`http://localhost:5001/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ word: cleaned }),
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Error generant rànquing");
+      }
+      return res.json();
+    })
+    .then((data) => {
+      const filename = data.filename;
+      if (!files.includes(filename)) files.push(filename);
+      renderFileList();
+    })
+    .catch((e) => alert(e.message));
+}
+
+function createRandom() {
+  if (
+    !confirm(
+      "Generar 10 rànquings pot trigar força (fastText). Vols continuar?"
+    )
+  )
+    return;
+  const statusEl = document.getElementById("random-status");
+  statusEl.style.display = "block";
+  statusEl.textContent = "Generant 10 paraules aleatòries...";
+  fetch(`http://localhost:5001/api/generate-random`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ count: 10 }),
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || "Error generant rànquings aleatoris");
+      }
+      return res.json();
+    })
+    .then((data) => {
+      data.generated.forEach((g) => {
+        if (!files.includes(g.filename)) files.push(g.filename);
+      });
+      renderFileList();
+      statusEl.textContent = `Generats ${data.count} fitxers.`;
+      setTimeout(() => (statusEl.style.display = "none"), 4000);
+    })
+    .catch((e) => {
+      statusEl.textContent = e.message;
+      setTimeout(() => (statusEl.style.display = "none"), 4000);
+    });
+}
+
+// Assignem l'event després de renderitzar
+document.addEventListener("DOMContentLoaded", () => {
+  const rndBtn = document.getElementById("create-random");
+  if (rndBtn) rndBtn.onclick = createRandom;
+  const searchBtn = document.getElementById("search-btn");
+  const searchInput = document.getElementById("search-word");
+  if (searchBtn && searchInput)
+    searchBtn.onclick = () => triggerSearch(searchInput.value);
+  if (searchInput) {
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") triggerSearch(searchInput.value);
+    });
+  }
+});
+
+// Esborrar fitxer
+function showDeleteDialog(filename) {
+  confirmDelete = filename;
+  renderDialog();
+}
+function renderDialog() {
+  const root = document.getElementById("dialog-root");
+  if (!confirmDelete) {
+    root.innerHTML = "";
+    return;
+  }
+  root.innerHTML = `
+		<div class="dialog-backdrop">
+			<div class="dialog">
+				<div style="margin-bottom:16px;">Segur que vols esborrar el fitxer?</div>
+				<div style="display:flex;justify-content:flex-end;gap:8px;">
+					<button class="button" id="cancel-del">Cancel·la</button>
+					<button class="button warning" id="confirm-del">Esborra</button>
+				</div>
+			</div>
+		</div>
+	`;
+  document.getElementById("cancel-del").onclick = () => {
+    confirmDelete = null;
+    renderDialog();
+  };
+  document.getElementById("confirm-del").onclick = () =>
+    deleteFile(confirmDelete);
+}
+function deleteFile(filename) {
+  fetch(`${API}/${filename}`, {
+    method: "DELETE",
+    headers: { ...authHeaders() },
+  }).then(() => {
+    files = files.filter((f) => f !== filename);
+    if (selected === filename) {
+      selected = null;
+      words = [];
+    }
+    confirmDelete = null;
+    renderFileList();
+    renderWordsArea();
+    renderDialog();
+  });
+}
+
+// Guardar fitxer
+function saveFile() {
+  if (!selected) return;
+  // Bloc contigu inicial
+  let contiguousEnd = 0;
+  while (wordsByPos[contiguousEnd]) contiguousEnd++;
+  const ranking = {};
+  for (let i = 0; i < contiguousEnd; i++) ranking[wordsByPos[i].word] = i;
+  fetch(`${API}/${selected}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ fragment: ranking, offset: 0 }),
+  }).then(() => {
+    dirty = false;
+    renderWordsArea();
+    // Elimina la marca groga de tots els ítems
+    setTimeout(() => {
+      document
+        .querySelectorAll(".word-item.moved")
+        .forEach((el) => el.classList.remove("moved"));
+    }, 0);
+  });
+}
+
+// Carregar més paraules
+function loadMoreGap(start, endKnown) {
+  if (!selected) return;
+  let limit = PAGE_SIZE;
+  if (endKnown !== null) {
+    const gapSize = endKnown - start + 1;
+    if (gapSize > 0 && gapSize < PAGE_SIZE) limit = gapSize; // només carrega el necessari
+  }
+  // Registra fins on arribava el bloc contigu abans de carregar
+  let oldContiguousEnd = 0;
+  while (wordsByPos[oldContiguousEnd]) oldContiguousEnd++;
+  fetch(`${API}/${selected}?offset=${start}&limit=${limit}`, {
+    headers: { ...authHeaders() },
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      data.words.forEach((w) => {
+        if (!wordsByPos[w.pos]) wordsByPos[w.pos] = w;
+      });
+      total = data.total;
+      renderWordsArea();
+      // Després de renderitzar, calculem nou límit contigu i marquem nous ítems
+      let newContiguousEnd = 0;
+      while (wordsByPos[newContiguousEnd]) newContiguousEnd++;
+      if (newContiguousEnd > oldContiguousEnd) {
+        setTimeout(() => {
+          const wordItems = document.querySelectorAll(".word-item");
+          for (let pos = oldContiguousEnd; pos < newContiguousEnd; pos++) {
+            wordItems.forEach((el) => {
+              if (
+                el.firstChild &&
+                el.firstChild.textContent &&
+                el.firstChild.textContent.startsWith(`${pos}.`)
+              ) {
+                tempHighlightElement(el);
+              }
+            });
+          }
+        }, 0);
+      }
+    });
+}
+
+function triggerSearch(term) {
+  if (!selected) return;
+  const t = term.trim().toLowerCase();
+  if (!t) return;
+  fetch(`${API}/${selected}/find?word=${encodeURIComponent(t)}`, {
+    headers: { ...authHeaders() },
+  })
+    .then((r) => r.json())
+    .then(async (res) => {
+      if (!res.found) {
+        alert("No trobada");
+        return;
+      }
+      await ensureVisible(res.pos, { highlight: true });
+    })
+    .catch(() => alert("Error en la cerca"));
+}

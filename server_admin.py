@@ -340,6 +340,12 @@ if __name__ == "__main__":
                 @app.get("/")
                 def _root_redirect():
                     return RedirectResponse(url="/admin/", status_code=307)
+                # Redirecció /admin -> /admin/ (sense barra final) perquè StaticFiles normalment espera la barra
+                @app.middleware("http")
+                async def _redirect_admin_root(request, call_next):
+                    if request.url.path == "/admin":
+                        return RedirectResponse(url="/admin/", status_code=307)
+                    return await call_next(request)
             else:
                 print("[WARN] Carpeta 'admin' no trobada; no es servirà el frontend.")
         # Executa servidor
