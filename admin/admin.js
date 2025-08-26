@@ -11,6 +11,9 @@ const GENERATE_ENDPOINT = `${API_BASE}/generate`; // alternatiu
 const GENERATE_RANDOM_ENDPOINT = `${API_BASE}/generate-random`;
 // Page size per a càrrega de fragments
 const PAGE_SIZE = 100;
+// Diccionari (obertura en nova pestanya). Substituïm [PARAULA]
+const DICT_URL_TEMPLATE =
+  "https://www.diccionari.cat/cerca/gran-diccionari-de-la-llengua-catalana?search_api_fulltext_cust=[PARAULA]";
 
 let adminToken = null; // guardem la contrasenya (x-admin-token)
 
@@ -118,11 +121,6 @@ function renderApp() {
               <input id="search-word" type="text" class="form-control" placeholder="Cerca paraula..." />
               <button class="btn btn-outline-secondary" id="search-btn" type="button" title="Cerca">Cerca</button>
             </div>
-            <div class="d-flex flex-wrap gap-2 mb-3" id="quick-jumps">
-              <button class="btn btn-sm btn-outline-secondary jump-btn" data-pos="300" title="Vés a posició 300">300</button>
-              <button class="btn btn-sm btn-outline-secondary jump-btn" data-pos="1500" title="Vés a posició 1500">1500</button>
-              <button class="btn btn-sm btn-outline-secondary jump-btn" data-pos="3000" title="Vés a posició 3000">3000</button>
-            </div>
             <div id="words-area" style="min-height:120px;"></div>
           </div>
         </div>
@@ -153,18 +151,6 @@ function bindStaticEvents() {
       if (e.key === "Enter") triggerSearch(searchInput.value);
     });
   }
-  // Quick jump buttons
-  document.querySelectorAll("#quick-jumps .jump-btn").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      const pos = parseInt(e.currentTarget.getAttribute("data-pos"), 10);
-      if (!selected) {
-        alert("Selecciona un fitxer primer");
-        return;
-      }
-      if (isNaN(pos)) return;
-      await ensureVisible(pos, { highlight: true, special: true, force: true });
-    });
-  });
 }
 
 function fetchFiles() {
@@ -444,11 +430,20 @@ function showMenu(e, pos) {
   menu.className = "menu";
   menu.style.left = menuAnchor.x + "px";
   menu.style.top = menuAnchor.y + "px";
-  menu.innerHTML = `
-		<div class="menu-item" id="move-to">Mou a posició…</div>
-		<div class="menu-item" id="move-end">Mou al final</div>
-		<div class="menu-item" id="delete-word" style="color:#c62828;">Elimina paraula…</div>
-	`;
+  // Construïm menú amb opcions bàsiques + moviments ràpids
+  const quickTargets = [300, 1500, 3000];
+  let html = `
+    <div class="menu-item" id="move-to">Mou a posició…</div>
+    <div class="menu-item" id="move-end">Mou al final</div>
+  `;
+  quickTargets.forEach((t) => {
+    if (total > t) {
+      html += `<div class="menu-item quick-move" data-target="${t}">Mou a ${t}</div>`;
+    }
+  });
+  html += `<div class=\"menu-item\" id=\"open-dict\">Obre al diccionari</div>`;
+  html += `<div class="menu-item" id="delete-word" style="color:#c62828;">Elimina paraula…</div>`;
+  menu.innerHTML = html;
   menuRoot.appendChild(menu);
   document.getElementById("move-to").onclick = (ev) => {
     ev.preventDefault();
@@ -468,6 +463,45 @@ function showMenu(e, pos) {
     handleDeleteWord();
     closeMenu();
   };
+  const openDict = document.getElementById("open-dict");
+  if (openDict) {
+    openDict.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (menuIdx != null) {
+        const wObj = wordsByPos[menuIdx];
+        if (wObj && wObj.word) {
+          const url = DICT_URL_TEMPLATE.replace(
+            "[PARAULA]",
+            encodeURIComponent(wObj.word)
+          );
+          window.open(url, "_blank", "noopener");
+        }
+      }
+      closeMenu();
+    };
+  }
+  // Enllaça moviments ràpids
+  menu.querySelectorAll(".quick-move").forEach((el) => {
+    el.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const targetRaw = parseInt(el.getAttribute("data-target"), 10);
+      const target = Math.min(total - 1, targetRaw);
+      if (menuIdx === null || target === menuIdx) {
+        closeMenu();
+        return;
+      }
+      await moveAbsolute(menuIdx, target);
+      closeMenu();
+      await reloadInitialBlock();
+      await ensureVisible(target, {
+        highlight: true,
+        special: true,
+        force: target >= PAGE_SIZE,
+      });
+    });
+  });
   // Només tanca el menú si es fa clic fora
   setTimeout(() => {
     // Abans era 'mousedown' i es tancava el menú abans que es disparessin els onClick dels ítems.
