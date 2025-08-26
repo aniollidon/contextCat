@@ -118,6 +118,11 @@ function renderApp() {
               <input id="search-word" type="text" class="form-control" placeholder="Cerca paraula..." />
               <button class="btn btn-outline-secondary" id="search-btn" type="button" title="Cerca">Cerca</button>
             </div>
+            <div class="d-flex flex-wrap gap-2 mb-3" id="quick-jumps">
+              <button class="btn btn-sm btn-outline-secondary jump-btn" data-pos="300" title="Vés a posició 300">300</button>
+              <button class="btn btn-sm btn-outline-secondary jump-btn" data-pos="1500" title="Vés a posició 1500">1500</button>
+              <button class="btn btn-sm btn-outline-secondary jump-btn" data-pos="3000" title="Vés a posició 3000">3000</button>
+            </div>
             <div id="words-area" style="min-height:120px;"></div>
           </div>
         </div>
@@ -148,6 +153,18 @@ function bindStaticEvents() {
       if (e.key === "Enter") triggerSearch(searchInput.value);
     });
   }
+  // Quick jump buttons
+  document.querySelectorAll("#quick-jumps .jump-btn").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const pos = parseInt(e.currentTarget.getAttribute("data-pos"), 10);
+      if (!selected) {
+        alert("Selecciona un fitxer primer");
+        return;
+      }
+      if (isNaN(pos)) return;
+      await ensureVisible(pos, { highlight: true, special: true, force: true });
+    });
+  });
 }
 
 function fetchFiles() {
