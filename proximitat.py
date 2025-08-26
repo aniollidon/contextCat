@@ -1,28 +1,57 @@
 import fasttext
 import fasttext.util
 import os
+import shutil
 import numpy as np
 from typing import List, Dict
+from pathlib import Path
 
-import os
-MODEL_PATH = os.path.join("data", "cc.ca.300.bin")
+# Carpeta de dades relativa al fitxer actual (no al cwd) per evitar problemes en entorns diferents
+BASE_DATA_DIR = Path(__file__).parent / "data"
+MODEL_PATH = BASE_DATA_DIR / "cc.ca.300.bin"
 
 def descarregar_model_fasttext():
-    """Descarrega el model de fastText per al català si no existeix."""
-    if not os.path.exists(MODEL_PATH):
-        print(f"Descarregant el model de fastText a '{MODEL_PATH}'...")
-        fasttext.util.download_model('ca', if_exists='ignore')
-        # El nom per defecte és cc.ca.300.bin, que coincideix amb MODEL_PATH
-        print("Descàrrega completada.")
-    else:
-        print("El model de fastText ja existeix localment.")
+    """Descarrega el model de fastText per al català dins de la carpeta data si no existeix.
+
+    Soluciona els casos en què al servidor Linux el working directory no és el mateix i
+    'data/cc.ca.300.bin' no es troba. Fem servir rutes absolutes i forcem la descarrega
+    dins de BASE_DATA_DIR.
+    """
+    if MODEL_PATH.exists():
+        return
+    BASE_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"[fasttext] Descarregant model a '{MODEL_PATH}' ...")
+    cwd = os.getcwd()
+    try:
+        # Canvia temporalment a la carpeta data perquè fasttext.util.download_model
+        # desa els fitxers al cwd.
+        os.chdir(BASE_DATA_DIR)
+        fasttext.util.download_model('ca', if_exists='ignore')  # genera cc.ca.300.bin (.gz primer)
+    finally:
+        os.chdir(cwd)
+    # Comprova i, si cal, mou el fitxer resultant
+    downloaded = BASE_DATA_DIR / "cc.ca.300.bin"
+    if not downloaded.exists():
+        # Intent de fallback si només hi ha la versió .bin.gz sense descomprimir (versions antigues)
+        gz = BASE_DATA_DIR / "cc.ca.300.bin.gz"
+        if gz.exists():
+            print("[fasttext] Descompressió manual del .gz...")
+            import gzip
+            with gzip.open(gz, 'rb') as f_in, open(downloaded, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        else:
+            raise RuntimeError("No s'ha pogut obtenir cc.ca.300.bin després de la descàrrega")
+    size_mb = downloaded.stat().st_size / (1024 * 1024)
+    if size_mb < 50:  # el model normalment és força més gran (> 1GB). Llindar baix per detectar descàrrega corrupta.
+        print(f"[WARN] Mida inesperadament petita ({size_mb:.1f} MB). Pot estar corrupta la descàrrega.")
+    print("[fasttext] Model descarregat/corresponent disponible.")
 
 def carregar_model_fasttext():
-    """Carrega el model de fastText."""
+    """Carrega el model de fastText amb rutes robustes (independentment del cwd)."""
     descarregar_model_fasttext()
-    print("Carregant el model de fastText a la memòria...")
-    model = fasttext.load_model(MODEL_PATH)
-    print("Model de fastText carregat.")
+    print(f"[fasttext] Carregant model des de '{MODEL_PATH}' ...")
+    model = fasttext.load_model(str(MODEL_PATH))
+    print("[fasttext] Model carregat.")
     return model
 
 def calcular_similitud_cosinus(vec1, vec2):
