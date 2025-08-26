@@ -646,6 +646,11 @@ function createRandom() {
     )
   )
     return;
+
+  // Desactivat el server per falta de ram
+  alert("Uoops... ara mateix no és possible parla amb l'Aniol");
+  return;
+
   const statusEl = document.getElementById("random-status");
   statusEl.style.display = "block";
   statusEl.textContent = "Generant 10 paraules aleatòries...";
