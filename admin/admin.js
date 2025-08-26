@@ -441,7 +441,7 @@ function showMenu(e, pos) {
       html += `<div class="menu-item quick-move" data-target="${t}">Mou a ${t}</div>`;
     }
   });
-  html += `<div class=\"menu-item\" id=\"open-dict\">Obre al diccionari</div>`;
+  html += `<div class=\"menu-item\" id=\"open-dict\">Cerca al diccionari</div>`;
   html += `<div class="menu-item" id="delete-word" style="color:#c62828;">Elimina paraula…</div>`;
   menu.innerHTML = html;
   menuRoot.appendChild(menu);
