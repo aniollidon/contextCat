@@ -122,8 +122,10 @@ function renderApp() {
             <div class="input-group input-group-sm mb-2">
               <input id="search-word" type="text" class="form-control" placeholder="Cerca paraula..." />
               <button class="btn btn-outline-secondary" id="search-btn" type="button" title="Cerca">Cerca</button>
+              <button class="btn btn-outline-info" id="show-test" type="button" title="Mostra paraules test">Test</button>
             </div>
             <div id="words-area" style="min-height:120px;"></div>
+            <div id="test-overlay" style="display:none; max-height:220px; overflow:auto; border:1px solid #ddd; border-radius:6px; padding:6px; background:#fff; margin-top:8px;"></div>
           </div>
         </div>
       </div>
@@ -138,6 +140,7 @@ function bindStaticEvents() {
   document.getElementById("create-file").onclick = createFile;
   const searchBtn = document.getElementById("search-btn");
   const searchInput = document.getElementById("search-word");
+  const testBtn = document.getElementById("show-test");
   const filterChk = document.getElementById("filter-pending");
   if (filterChk) {
     filterChk.checked = showOnlyPending;
@@ -151,6 +154,63 @@ function bindStaticEvents() {
     searchInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") triggerSearch(searchInput.value);
     });
+  }
+  if (testBtn) testBtn.onclick = toggleTestOverlay;
+}
+
+let testVisible = false;
+async function toggleTestOverlay() {
+  if (!selected) return;
+  testVisible = !testVisible;
+  const overlay = document.getElementById("test-overlay");
+  if (!testVisible) {
+    overlay.style.display = "none";
+    overlay.innerHTML = "";
+    return;
+  }
+  overlay.style.display = "block";
+  overlay.innerHTML =
+    '<div class="text-muted small">Carregant paraules test…</div>';
+  try {
+    const res = await fetch(`${RANKINGS_API}/${selected}/test-words`, {
+      headers: { ...authHeaders() },
+    });
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    const rows = data.words
+      .map((w) => {
+        if (w.found) {
+          return `<div class="test-row"><span style="color:${colorPerPos(
+            w.pos
+          )}">${w.word}</span> <a href="#" data-pos="${
+            w.pos
+          }" class="jump" title="Ves a posició">(${w.pos})</a></div>`;
+        }
+        return `<div class="test-row text-muted"><span>${w.word}</span> <span style="font-size:11px">(no)</span></div>`;
+      })
+      .join("");
+    overlay.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <strong class="small">Paraules test (${data.count})</strong>
+      <button class="btn btn-sm btn-outline-secondary" id="close-test">Tanca</button>
+    </div><div class="test-body" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${rows}</div>`;
+    document.getElementById("close-test").onclick = () => {
+      testVisible = false;
+      toggleTestOverlay();
+    };
+    overlay.querySelectorAll("a.jump").forEach((a) => {
+      a.addEventListener("click", async (e) => {
+        e.preventDefault();
+        const p = parseInt(a.getAttribute("data-pos"), 10);
+        await ensureVisible(p, {
+          highlight: true,
+          special: true,
+          force: p >= PAGE_SIZE,
+        });
+      });
+    });
+  } catch (e) {
+    overlay.innerHTML =
+      '<div class="text-danger small">Error carregant test</div>';
   }
 }
 

@@ -312,6 +312,33 @@ def find_word(filename: str, word: str, _: None = Depends(require_auth)):
         return {"found": True, "pos": data[w]}
     return {"found": False}
 
+@app.get("/api/rankings/{filename}/test-words")
+def ranking_test_words(filename: str, _: None = Depends(require_auth)):
+    """Retorna les paraules de data/test.json amb la seva posició (o no trobada)."""
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat.")
+    test_path = Path(__file__).parent / "data" / "test.json"
+    if not test_path.exists():
+        raise HTTPException(status_code=404, detail="test.json no trobat")
+    try:
+        with open(test_path, encoding="utf-8") as f:
+            test_words = json.load(f)
+    except Exception:
+        raise HTTPException(status_code=500, detail="No s'ha pogut llegir test.json")
+    with open(file_path, encoding="utf-8") as f:
+        ranking = json.load(f)  # dict word->pos
+    out = []
+    for w in test_words:
+        wl = str(w).strip().lower()
+        if not wl:
+            continue
+        if wl in ranking:
+            out.append({"word": w, "found": True, "pos": ranking[wl]})
+        else:
+            out.append({"word": w, "found": False})
+    return {"count": len(out), "words": out}
+
 @app.delete("/api/rankings/{filename}/word/{pos}")
 def delete_word(filename: str, pos: int, _: None = Depends(require_auth)):
     """Elimina una paraula de la llista pel seu rang (posició absoluta) i reindexa."""
