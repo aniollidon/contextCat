@@ -198,6 +198,11 @@ def move_word(filename: str, move: MoveRequest, _: None = Depends(require_auth))
 @app.post("/api/rankings/generate")
 def generate_ranking(req: GenerateRequest, _: None = Depends(require_auth)):
     """Genera un fitxer de rànquing per a una paraula (similar a generate.py)."""
+
+    # Si és linux retorna un error
+    if sys.platform.startswith("linux"):
+        raise HTTPException(status_code=400, detail="No es pot generar rànquing en sistemes Linux.")
+
     word = req.word.strip().lower()
     if not word:
         raise HTTPException(status_code=400, detail="Paraula buida")
@@ -262,6 +267,11 @@ def _get_model():
 @app.post("/api/generate-random")
 def generate_random(req: RandomGenerateRequest, _: None = Depends(require_auth)):
     """Genera diversos fitxers de rànquing per paraules aleatòries."""
+    
+    # Si és linux retorna un error
+    if sys.platform.startswith("linux"):
+        raise HTTPException(status_code=400, detail="No es pot generar rànquing en sistemes Linux.")
+
     count = max(1, min(req.count, 50))  # límit de seguretat
     dicc = _get_diccionari()
     from proximitat import calcular_ranking_complet

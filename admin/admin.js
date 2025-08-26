@@ -615,6 +615,11 @@ function createFile() {
     ""
   );
   if (paraula === null) return; // cancel·lat
+
+  // Desactivat el server per falta de ram
+  alert("Uoops... ara mateix no és possible parla amb l'Aniol");
+  return;
+
   const cleaned = paraula.trim().toLowerCase();
   if (!cleaned) return;
   // Crida endpoint de generació
