@@ -63,6 +63,32 @@ let showOnlyPending = false; // filtre de fitxers no validats
 let autoSaveTimer = null; // temporitzador per auto-desat
 const AUTO_SAVE_DELAY = 800; // ms després de l'últim canvi de drag
 
+// Configuració general
+let settings = {
+  autoScroll: true, // per defecte activat
+};
+
+// Carrega configuració del localStorage
+function loadSettings() {
+  try {
+    const saved = localStorage.getItem("contextcat-admin-settings");
+    if (saved) {
+      settings = { ...settings, ...JSON.parse(saved) };
+    }
+  } catch (e) {
+    console.warn("Error carregant configuració:", e);
+  }
+}
+
+// Desa configuració al localStorage
+function saveSettings() {
+  try {
+    localStorage.setItem("contextcat-admin-settings", JSON.stringify(settings));
+  } catch (e) {
+    console.warn("Error desant configuració:", e);
+  }
+}
+
 // Highlight temporal helper (classe configurable)
 function tempHighlightElement(el, ms = 1000, cls = "moved") {
   if (!el) return;
@@ -83,6 +109,7 @@ function colorPerPos(posicio) {
 
 // Render inicial
 document.addEventListener("DOMContentLoaded", async () => {
+  loadSettings(); // Carrega la configuració al iniciar
   renderApp();
   const ok = await ensureAuthenticated();
   if (ok) fetchFiles();
@@ -95,6 +122,11 @@ function renderApp() {
       <div class="row mb-4">
         <div class="col-12 text-center">
           <h2 class="fw-bold mb-2">Gestió Rebuscat.cat</h2>
+          <div class="d-flex justify-content-center">
+            <button class="btn btn-outline-secondary btn-sm" id="settings-btn" title="Configuració general">
+              <i class="bi bi-gear"></i> Configuració
+            </button>
+          </div>
         </div>
       </div>
       <div class="row g-4">
@@ -131,6 +163,32 @@ function renderApp() {
       </div>
       <div id="dialog-root"></div>
       <div id="menu-root"></div>
+      <!-- Modal de configuració -->
+      <div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="settingsModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="settingsModalLabel">Configuració General</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tanca"></button>
+            </div>
+            <div class="modal-body">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="autoScrollSwitch">
+                <label class="form-check-label" for="autoScrollSwitch">
+                  Moviment automàtic de la vista
+                </label>
+                <div class="form-text">
+                  Quan està activat, la vista es mourà automàticament cap a la nova posició de les paraules que es mouen.
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tanca</button>
+              <button type="button" class="btn btn-primary" id="saveSettingsBtn">Desa</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   `;
   bindStaticEvents();
@@ -142,6 +200,8 @@ function bindStaticEvents() {
   const searchInput = document.getElementById("search-word");
   const testBtn = document.getElementById("show-test");
   const filterChk = document.getElementById("filter-pending");
+  const settingsBtn = document.getElementById("settings-btn");
+
   if (filterChk) {
     filterChk.checked = showOnlyPending;
     filterChk.onchange = () => {
@@ -156,6 +216,52 @@ function bindStaticEvents() {
     });
   }
   if (testBtn) testBtn.onclick = toggleTestOverlay;
+  if (settingsBtn) settingsBtn.onclick = openSettingsModal;
+}
+
+// Funcions per la configuració general
+function openSettingsModal() {
+  loadSettings(); // Carrega la configuració actual
+
+  // Actualitza l'estat del switch
+  const autoScrollSwitch = document.getElementById("autoScrollSwitch");
+  if (autoScrollSwitch) {
+    autoScrollSwitch.checked = settings.autoScroll;
+  }
+
+  // Obre el modal
+  const settingsModal = new bootstrap.Modal(
+    document.getElementById("settingsModal")
+  );
+  settingsModal.show();
+
+  // Assigna l'event del botó Desa
+  const saveBtn = document.getElementById("saveSettingsBtn");
+  if (saveBtn) {
+    saveBtn.onclick = saveSettingsFromModal;
+  }
+}
+
+function saveSettingsFromModal() {
+  // Actualitza la configuració amb els valors del modal
+  const autoScrollSwitch = document.getElementById("autoScrollSwitch");
+  if (autoScrollSwitch) {
+    settings.autoScroll = autoScrollSwitch.checked;
+  }
+
+  // Desa la configuració
+  saveSettings();
+
+  // Tanca el modal
+  const settingsModal = bootstrap.Modal.getInstance(
+    document.getElementById("settingsModal")
+  );
+  if (settingsModal) {
+    settingsModal.hide();
+  }
+
+  // Mostra confirmació
+  console.log("Configuració desada:", settings);
 }
 
 async function addTestWordsPrompt() {
@@ -827,6 +933,11 @@ async function reloadInitialBlock() {
 
 // options: {highlight, force, special}
 async function ensureVisible(pos, options = {}) {
+  // Comprova si el moviment automàtic està desactivat
+  if (!settings.autoScroll) {
+    return; // No fa res si el moviment automàtic està desactivat
+  }
+
   const { highlight = false, force = false, special = false } = options;
   if (force && wordsByPos[pos]) delete wordsByPos[pos];
   const applyHighlight = () => {
