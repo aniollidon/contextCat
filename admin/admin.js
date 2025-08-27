@@ -576,6 +576,20 @@ function renderFileList() {
         });
     });
 
+    // Play button amb icona Bootstrap
+    const play = document.createElement("button");
+    play.className = "icon-btn";
+    play.title = "Juga amb aquesta paraula";
+    play.innerHTML = '<i class="bi bi-play-circle"></i>';
+    play.onclick = (e) => {
+      e.stopPropagation();
+      // Codifica el nom del fitxer (que és la paraula) en Base64
+      const wordBase64 = btoa(f);
+      const gameUrl = `http://5.250.190.223/?word=${wordBase64}`;
+      window.open(gameUrl, "_blank", "noopener");
+    };
+    li.appendChild(play);
+
     // Delete button amb icona Bootstrap
     const del = document.createElement("button");
     del.className = "icon-btn";
