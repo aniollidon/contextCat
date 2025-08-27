@@ -13,6 +13,7 @@ WORDS_DIR = Path(__file__).parent / "data" / "words"
 WORDS_DIR.mkdir(parents=True, exist_ok=True)
 
 VALIDATIONS_PATH = Path(__file__).parent / "data" / "validacions.json"
+FAVORITES_PATH = Path(__file__).parent / "data" / "preferits.json"
 
 def _load_validations() -> dict:
     if VALIDATIONS_PATH.exists():
@@ -31,6 +32,24 @@ def _save_validations(data: dict):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         raise HTTPException(status_code=500, detail="No s'ha pogut desar validacions")
+
+def _load_favorites() -> dict:
+    if FAVORITES_PATH.exists():
+        try:
+            with open(FAVORITES_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {}
+
+def _save_favorites(data: dict):
+    try:
+        with open(FAVORITES_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        raise HTTPException(status_code=500, detail="No s'ha pogut desar preferits")
 
 ADMIN_PORT = int(os.getenv("ADMIN_PORT", 5001))
 
@@ -95,8 +114,15 @@ def list_rankings(_: None = Depends(require_auth)):
 def get_validations(_: None = Depends(require_auth)):
     return _load_validations()
 
+@app.get("/api/favorites")
+def get_favorites(_: None = Depends(require_auth)):
+    return _load_favorites()
+
 class ValidationUpdate(BaseModel):
     validated: bool
+
+class FavoriteUpdate(BaseModel):
+    favorite: bool
 
 @app.post("/api/validations/{filename}")
 def set_validation(filename: str, upd: ValidationUpdate, _: None = Depends(require_auth)):
@@ -113,6 +139,22 @@ def set_validation(filename: str, upd: ValidationUpdate, _: None = Depends(requi
             del vals[filename]
     _save_validations(vals)
     return {"ok": True, "validated": upd.validated}
+
+@app.post("/api/favorites/{filename}")
+def set_favorite(filename: str, upd: FavoriteUpdate, _: None = Depends(require_auth)):
+    # accept only existing ranking files
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat")
+    favs = _load_favorites()
+    if upd.favorite:
+        favs[filename] = True
+    else:
+        # remove key if false to keep file small
+        if filename in favs:
+            del favs[filename]
+    _save_favorites(favs)
+    return {"ok": True, "favorite": upd.favorite}
 
 from fastapi import Query
 

@@ -6,6 +6,7 @@ const SERVER = `http://5.250.190.223:${PORT}`;
 const API_BASE = `${SERVER}/api`;
 const RANKINGS_API = `${API_BASE}/rankings`;
 const VALIDATIONS_API = `${API_BASE}/validations`;
+const FAVORITES_API = `${API_BASE}/favorites`;
 const AUTH_ENDPOINT = `${API_BASE}/auth`;
 const GENERATE_ENDPOINT = `${API_BASE}/generate`; // alternatiu
 const GENERATE_RANDOM_ENDPOINT = `${API_BASE}/generate-random`;
@@ -59,7 +60,9 @@ let confirmDelete = null;
 // Guarda informació de l'últim moviment
 let lastMoveInfo = null; // {word, toPos}
 let validations = {}; // filename -> true
+let favorites = {}; // filename -> true
 let showOnlyPending = false; // filtre de fitxers no validats
+let showOnlyFavorites = false; // filtre de fitxers preferits
 let autoSaveTimer = null; // temporitzador per auto-desat
 const AUTO_SAVE_DELAY = 800; // ms després de l'últim canvi de drag
 
@@ -137,6 +140,10 @@ function renderApp() {
               <input type="checkbox" id="filter-pending" class="form-check-input" />
               <label for="filter-pending" id="filter-pending-label" class="form-check-label" style="cursor:pointer;">Només pendents</label>
             </div>
+            <div class="d-flex align-items-center gap-2 mb-2 small">
+              <input type="checkbox" id="filter-favorites" class="form-check-input" />
+              <label for="filter-favorites" id="filter-favorites-label" class="form-check-label" style="cursor:pointer;">Només preferits</label>
+            </div>
             <ul class="file-list" id="file-list"></ul>
             <div class="d-grid mt-3 gap-2">
               <button class="btn btn-primary" id="create-file" type="button">Crear rànquing…</button>
@@ -200,12 +207,20 @@ function bindStaticEvents() {
   const searchInput = document.getElementById("search-word");
   const testBtn = document.getElementById("show-test");
   const filterChk = document.getElementById("filter-pending");
+  const favoritesChk = document.getElementById("filter-favorites");
   const settingsBtn = document.getElementById("settings-btn");
 
   if (filterChk) {
     filterChk.checked = showOnlyPending;
     filterChk.onchange = () => {
       showOnlyPending = filterChk.checked;
+      renderFileList();
+    };
+  }
+  if (favoritesChk) {
+    favoritesChk.checked = showOnlyFavorites;
+    favoritesChk.onchange = () => {
+      showOnlyFavorites = favoritesChk.checked;
       renderFileList();
     };
   }
@@ -362,6 +377,7 @@ async function loadTestOverlayData() {
           highlight: true,
           special: true,
           force: p >= PAGE_SIZE,
+          forceScroll: true, // Sempre fa scroll quan es va des de test
         });
       });
     });
@@ -455,7 +471,7 @@ function updateTestSelectionUI() {
 }
 
 function fetchFiles() {
-  // Carrega llistat i validacions en paral·lel
+  // Carrega llistat, validacions i preferits en paral·lel
   Promise.all([
     fetch(RANKINGS_API, { headers: { ...authHeaders() } }).then((r) =>
       r.json()
@@ -463,9 +479,13 @@ function fetchFiles() {
     fetch(VALIDATIONS_API, {
       headers: { ...authHeaders() },
     }).then((r) => r.json()),
-  ]).then(([flist, vals]) => {
+    fetch(FAVORITES_API, {
+      headers: { ...authHeaders() },
+    }).then((r) => r.json()),
+  ]).then(([flist, vals, favs]) => {
     files = flist;
     validations = vals || {};
+    favorites = favs || {};
     renderFileList();
   });
 }
@@ -475,18 +495,26 @@ function renderFileList() {
   ul.innerHTML = "";
   files.forEach((f) => {
     const isValidated = !!validations[f];
+    const isFavorite = !!favorites[f];
     if (showOnlyPending && isValidated) return;
+    if (showOnlyFavorites && !isFavorite) return;
     const li = document.createElement("li");
     li.className = "list-item" + (selected === f ? " selected" : "");
     // Nom del fitxer
     const span = document.createElement("span");
     span.style.flex = "1";
     const chkId = `val-${f}`;
+    const starId = `fav-${f}`;
     const checked = !!validations[f];
     span.innerHTML = `
       <input type="checkbox" class="form-check-input me-2 validate-chk" id="${chkId}" ${
       checked ? "checked" : ""
     } title="Marca com a fet" />
+      <button class="star-btn ${
+        isFavorite ? "favorite" : ""
+      }" id="${starId}" title="Marca com a preferit" type="button">
+        <i class="bi ${isFavorite ? "bi-star-fill" : "bi-star"}"></i>
+      </button>
       <label for="${chkId}" class="form-check-label" style="cursor:pointer;">${f}</label>
     `;
     li.appendChild(span);
@@ -518,6 +546,34 @@ function renderFileList() {
           alert("Error desant validació");
         });
     });
+
+    // Star button toggle (aturar propagació per no carregar el fitxer automàticament)
+    const starBtn = span.querySelector(".star-btn");
+    starBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const newVal = !favorites[f];
+      fetch(`${FAVORITES_API}/${f}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ favorite: newVal }),
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error();
+          if (newVal) {
+            favorites[f] = true;
+            starBtn.classList.add("favorite");
+            starBtn.querySelector("i").className = "bi bi-star-fill";
+          } else {
+            delete favorites[f];
+            starBtn.classList.remove("favorite");
+            starBtn.querySelector("i").className = "bi bi-star";
+          }
+        })
+        .catch(() => {
+          alert("Error desant preferit");
+        });
+    });
+
     // Delete button amb icona Bootstrap
     const del = document.createElement("button");
     del.className = "icon-btn";
@@ -931,14 +987,20 @@ async function reloadInitialBlock() {
   refreshTestOverlayIfVisible();
 }
 
-// options: {highlight, force, special}
+// options: {highlight, force, special, forceScroll}
 async function ensureVisible(pos, options = {}) {
-  // Comprova si el moviment automàtic està desactivat
-  if (!settings.autoScroll) {
-    return; // No fa res si el moviment automàtic està desactivat
+  const {
+    highlight = false,
+    force = false,
+    special = false,
+    forceScroll = false,
+  } = options;
+
+  // Comprova si el moviment automàtic està desactivat, però permet forceScroll
+  if (!settings.autoScroll && !forceScroll) {
+    return; // No fa res si el moviment automàtic està desactivat i no és un forceScroll
   }
 
-  const { highlight = false, force = false, special = false } = options;
   if (force && wordsByPos[pos]) delete wordsByPos[pos];
   const applyHighlight = () => {
     if (!highlight) return;
@@ -968,7 +1030,7 @@ async function ensureVisible(pos, options = {}) {
     wordsByPos[data.words[0].pos] = data.words[0];
   renderWordsArea();
   if (highlight && !force)
-    await ensureVisible(pos, { highlight: true, special });
+    await ensureVisible(pos, { highlight: true, special, forceScroll });
   else applyHighlight();
 }
 

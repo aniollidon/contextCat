@@ -183,3 +183,29 @@
 #settings-btn i {
   margin-right: 4px;
 }
+
+/* Estrella de preferits */
+.star-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #ccc;
+  font-size: 16px;
+  margin-right: 8px;
+  padding: 2px;
+  transition: color 0.2s;
+}
+
+.star-btn:hover {
+  color: #ffc107;
+}
+
+.star-btn.favorite {
+  color: #ffc107;
+}
+
+.star-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.25);
+  border-radius: 2px;
+}
