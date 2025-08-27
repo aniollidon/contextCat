@@ -1301,7 +1301,7 @@ function triggerSearch(term) {
         alert("No trobada");
         return;
       }
-      await ensureVisible(res.pos, { highlight: true });
+      await ensureVisible(res.pos, { highlight: true, forceScroll: true });
     })
     .catch(() => alert("Error en la cerca"));
 }
