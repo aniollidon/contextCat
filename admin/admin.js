@@ -124,7 +124,7 @@ function renderApp() {
     <div class="container py-4">
       <div class="row mb-4">
         <div class="col-12 text-center">
-          <h2 class="fw-bold mb-2">Gestió Rebuscat.cat</h2>
+          <h2 class="fw-bold mb-2">rebuscada.cat - Gestió </h2>
           <div class="d-flex justify-content-center">
             <button class="btn btn-outline-secondary btn-sm" id="settings-btn" title="Configuració general">
               <i class="bi bi-gear"></i> Configuració
