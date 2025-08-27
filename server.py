@@ -7,9 +7,21 @@ from typing import List, Dict, Optional
 import json
 import os
 import random
+import logging
 from datetime import date
 from dotenv import load_dotenv
 from pathlib import Path
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('game.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -82,6 +94,7 @@ def obtenir_ranking_actiu(paraula_dia_request: Optional[str] = None):
 
 # Carregar rànquing per defecte
 RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, PARAULA_DIA = carregar_ranking(DEFAULT_PARAULA_DIA)
+logger.info(f"SERVIDOR INICIAT: Paraula objectiu '{PARAULA_DIA}' ({TOTAL_PARAULES_RANKING} paraules)")
 
 class GuessRequest(BaseModel):
     paraula: str
@@ -119,17 +132,24 @@ async def guess(request: GuessRequest):
     paraula_introduida = Diccionari.normalitzar_paraula(request.paraula)
     forma_canonica, es_flexio = dicc.obtenir_forma_canonica(paraula_introduida)
     if forma_canonica is None:
+        logger.info(f"GUESS: '{paraula_introduida}' -> INVÀLIDA (objectiu: {paraula_objectiu})")
         raise HTTPException(
             status_code=400,
             detail="Disculpa, aquesta paraula no és vàlida."
         )
     rank = ranking_diccionari.get(forma_canonica)
     if rank is None:
+        logger.info(f"GUESS: '{paraula_introduida}' ({forma_canonica}) -> NO TROBADA (objectiu: {paraula_objectiu})")
         raise HTTPException(
             status_code=500,
             detail="Disculpa, aquesta paraula no es troba al nostre llistat."
         )
     es_correcta = forma_canonica == paraula_objectiu
+    
+    # Log de l'intent
+    status = "CORRECTA!" if es_correcta else f"#{rank}"
+    logger.info(f"GUESS: '{paraula_introduida}' ({forma_canonica if es_flexio else forma_canonica}) -> {status} (objectiu: {paraula_objectiu})")
+    
     return GuessResponse(
         paraula=paraula_introduida,
         forma_canonica=forma_canonica if es_flexio else None,
@@ -229,7 +249,11 @@ async def donar_pista(request: PistaRequest):
                 break
     
     if paraula_pista is None:
+        logger.warning(f"PISTA: No s'ha trobat cap pista adequada (objectiu: {paraula_objectiu}, millor: #{millor_ranking})")
         raise HTTPException(status_code=404, detail="No s'ha pogut trobar una pista adequada.")
+    
+    # Log de la pista donada
+    logger.info(f"PISTA: '{paraula_pista}' -> #{ranking_diccionari[paraula_pista]} (objectiu: {paraula_objectiu}, millor: #{millor_ranking})")
     
     return PistaResponse(
         paraula=paraula_pista,
@@ -248,14 +272,17 @@ async def canviar_paraula_dia(paraula_dia: str):
     global RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, PARAULA_DIA
     try:
         RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, PARAULA_DIA = carregar_ranking(paraula_dia.lower())
+        logger.info(f"PARAULA DIA CANVIADA: '{PARAULA_DIA}' ({TOTAL_PARAULES_RANKING} paraules)")
         return {
             "message": f"Paraula del dia canviada a '{paraula_dia}'",
             "paraula_dia": PARAULA_DIA,
             "total_paraules": TOTAL_PARAULES_RANKING
         }
     except HTTPException as e:
+        logger.error(f"PARAULA DIA ERROR: No s'ha trobat '{paraula_dia}'")
         raise e
     except Exception as e:
+        logger.error(f"PARAULA DIA ERROR: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error canviant la paraula del dia: {str(e)}"
@@ -270,6 +297,11 @@ async def info():
         "rànquing_carregat": len(RANKING_DICCIONARI) > 0
     }
 
+@app.get("/paraula-dia")
+async def get_paraula_dia():
+    """Retorna la paraula del dia actual"""
+    return {"paraula": PARAULA_DIA}
+
 @app.post("/rendirse", response_model=RendirseResponse)
 async def rendirse(request: RendirseRequest):
     """Endpoint per rendir-se i obtenir la resposta correcta"""
@@ -279,9 +311,13 @@ async def rendirse(request: RendirseRequest):
         # Obtenir rànquing actiu (global o especificat)
         ranking_diccionari, formes_canoniques, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.paraula_dia)
         
+        # Log de rendició
+        logger.info(f"RENDICIÓ: Revelada paraula '{paraula_objectiu}'")
+        
         return RendirseResponse(paraula_correcta=paraula_objectiu)
     
     except Exception as e:
+        logger.error(f"RENDICIÓ: Error - {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error en rendir-se: {str(e)}"
