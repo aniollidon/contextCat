@@ -485,7 +485,7 @@ def delete_word(filename: str, pos: int, _: None = Depends(require_auth)):
 if __name__ == "__main__":
     import sys
     import argparse
-    parser = argparse.ArgumentParser(description="Server admin ContextCat")
+    parser = argparse.ArgumentParser(description="Server admin Rebuscada")
     parser.add_argument("--frontend", action="store_true", help="Serveix també el frontend d'administració (carpeta /admin) a /admin")
     args = parser.parse_args()
     try:

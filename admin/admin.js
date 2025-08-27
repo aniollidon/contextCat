@@ -1,6 +1,5 @@
 // Configuració
 const PORT = 3000; // Port on corre el backend admin (uvicorn)
-// Arrel del servidor (es pot sobreescriure abans de carregar aquest script definint window.CONTEXTCAT_SERVER)
 const SERVER = `http://5.250.190.223:${PORT}`;
 // Bases d'API
 const API_BASE = `${SERVER}/api`;
@@ -74,7 +73,7 @@ let settings = {
 // Carrega configuració del localStorage
 function loadSettings() {
   try {
-    const saved = localStorage.getItem("contextcat-admin-settings");
+    const saved = localStorage.getItem("rebuscada-admin-settings");
     if (saved) {
       settings = { ...settings, ...JSON.parse(saved) };
     }
@@ -86,7 +85,7 @@ function loadSettings() {
 // Desa configuració al localStorage
 function saveSettings() {
   try {
-    localStorage.setItem("contextcat-admin-settings", JSON.stringify(settings));
+    localStorage.setItem("rebuscada-admin-settings", JSON.stringify(settings));
   } catch (e) {
     console.warn("Error desant configuració:", e);
   }
@@ -124,7 +123,7 @@ function renderApp() {
     <div class="container py-4">
       <div class="row mb-4">
         <div class="col-12 text-center">
-          <h2 class="fw-bold mb-2">rebuscada.cat - Gestió </h2>
+          <h2 class="fw-bold mb-2">Rebuscada.cat - Gestió </h2>
           <div class="d-flex justify-content-center">
             <button class="btn btn-outline-secondary btn-sm" id="settings-btn" title="Configuració general">
               <i class="bi bi-gear"></i> Configuració
