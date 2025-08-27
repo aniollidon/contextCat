@@ -121,13 +121,13 @@ async def guess(request: GuessRequest):
     if forma_canonica is None:
         raise HTTPException(
             status_code=400,
-            detail="Paraula no vàlida. No es troba al diccionari."
+            detail="Disculpa, aquesta paraula no és vàlida."
         )
     rank = ranking_diccionari.get(forma_canonica)
     if rank is None:
         raise HTTPException(
             status_code=500,
-            detail="Error intern: La paraula no s'ha trobat al rànquing."
+            detail="Disculpa, aquesta paraula no es troba al nostre llistat."
         )
     es_correcta = forma_canonica == paraula_objectiu
     return GuessResponse(
