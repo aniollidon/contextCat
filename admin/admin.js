@@ -136,13 +136,15 @@ function renderApp() {
         <div class="col-md-4">
           <div class="paper">
             <h5 class="mb-3">Fitxers</h5>
-            <div class="d-flex align-items-center gap-2 mb-2 small">
-              <input type="checkbox" id="filter-pending" class="form-check-input" />
-              <label for="filter-pending" id="filter-pending-label" class="form-check-label" style="cursor:pointer;">Només pendents</label>
-            </div>
-            <div class="d-flex align-items-center gap-2 mb-2 small">
-              <input type="checkbox" id="filter-favorites" class="form-check-input" />
-              <label for="filter-favorites" id="filter-favorites-label" class="form-check-label" style="cursor:pointer;">Només preferits</label>
+            <div class="d-flex align-items-center gap-3 mb-2 small">
+              <div class="d-flex align-items-center gap-2">
+                <input type="checkbox" id="filter-pending" class="form-check-input" />
+                <label for="filter-pending" id="filter-pending-label" class="form-check-label" style="cursor:pointer;">Només pendents</label>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <input type="checkbox" id="filter-favorites" class="form-check-input" />
+                <label for="filter-favorites" id="filter-favorites-label" class="form-check-label" style="cursor:pointer;">Només preferits</label>
+              </div>
             </div>
             <ul class="file-list" id="file-list"></ul>
             <div class="d-grid mt-3 gap-2">
