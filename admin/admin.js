@@ -583,8 +583,9 @@ function renderFileList() {
     play.innerHTML = '<i class="bi bi-play-circle"></i>';
     play.onclick = (e) => {
       e.stopPropagation();
-      // Codifica el nom del fitxer (que és la paraula) en Base64
-      const wordBase64 = btoa(f);
+      // Extreu la paraula sense l'extensió .json i la codifica en Base64
+      const word = f.replace(/\.json$/, "");
+      const wordBase64 = btoa(word);
       const gameUrl = `http://5.250.190.223/?word=${wordBase64}`;
       window.open(gameUrl, "_blank", "noopener");
     };
