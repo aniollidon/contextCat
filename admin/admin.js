@@ -6,6 +6,7 @@ const API_BASE = `${SERVER}/api`;
 const RANKINGS_API = `${API_BASE}/rankings`;
 const VALIDATIONS_API = `${API_BASE}/validations`;
 const FAVORITES_API = `${API_BASE}/favorites`;
+const DIFFICULTIES_API = `${API_BASE}/difficulties`;
 const AUTH_ENDPOINT = `${API_BASE}/auth`;
 const GENERATE_ENDPOINT = `${API_BASE}/generate`; // alternatiu
 const GENERATE_RANDOM_ENDPOINT = `${API_BASE}/generate-random`;
@@ -58,8 +59,9 @@ let menuAnchor = null;
 let confirmDelete = null;
 // Guarda informació de l'últim moviment
 let lastMoveInfo = null; // {word, toPos}
-let validations = {}; // filename -> true
+let validations = {}; // filename -> 'validated' | 'approved' (empty means not validated)
 let favorites = {}; // filename -> true
+let difficulties = {}; // filename -> 'facil'|'mitja'|'dificil'
 let showOnlyPending = false; // filtre de fitxers no validats
 let showOnlyFavorites = false; // filtre de fitxers preferits
 let autoSaveTimer = null; // temporitzador per auto-desat
@@ -109,6 +111,45 @@ function colorPerPos(posicio) {
   return "#9e9e9e"; // Gris per la resta
 }
 
+// Genera etiqueta de dificultat amb color
+function getDifficultyTag(difficulty) {
+  const configs = {
+    facil: { label: "Fàcil", color: "#28a745", bg: "#d4edda" },
+    mitja: { label: "Mitjà", color: "#fd7e14", bg: "#fef3cd" },
+    dificil: { label: "Difícil", color: "#dc3545", bg: "#f8d7da" },
+  };
+  const config = configs[difficulty];
+  if (!config) return "";
+  return `<span class="difficulty-tag" style="background:${config.bg}; color:${config.color}; font-size:10px; padding:2px 6px; border-radius:8px; margin-left:6px; border:1px solid ${config.color}">${config.label}</span>`;
+}
+
+// Obtenir l'estat de validació i configurar el checkbox
+function getValidationState(filename) {
+  const status = validations[filename] || "";
+  if (status === "approved") {
+    return {
+      checked: true,
+      indeterminate: false,
+      className: "validated-approved",
+      title: "Aprovat per l'Aniol - Fes clic per tornar a no validat",
+    };
+  } else if (status === "validated") {
+    return {
+      checked: true,
+      indeterminate: false,
+      className: "validated-yes",
+      title: "Validat - Fes clic per aprovar",
+    };
+  } else {
+    return {
+      checked: false,
+      indeterminate: false,
+      className: "",
+      title: "No validat - Fes clic per validar",
+    };
+  }
+}
+
 // Render inicial
 document.addEventListener("DOMContentLoaded", async () => {
   loadSettings(); // Carrega la configuració al iniciar
@@ -156,7 +197,15 @@ function renderApp() {
         <div class="col-md-8">
           <div class="paper">
             <div class="d-flex align-items-center justify-content-between mb-2">
-              <h5 class="mb-0">Paraules</h5>
+              <div class="d-flex align-items-center gap-2">
+                <h5 class="mb-0" id="words-title">Paraules</h5>
+                <select id="difficulty-selector" class="form-select form-select-sm" style="width:140px; display:none;" title="Dificultat del rànquing">
+                  <option value="">No categoritzat</option>
+                  <option value="facil">Fàcil</option>
+                  <option value="mitja">Mitjà</option>
+                  <option value="dificil">Difícil</option>
+                </select>
+              </div>
               <span id="autosave-status" class="text-muted small" style="display:none;">Desant…</span>
             </div>
             <div class="input-group input-group-sm mb-2">
@@ -210,6 +259,7 @@ function bindStaticEvents() {
   const filterChk = document.getElementById("filter-pending");
   const favoritesChk = document.getElementById("filter-favorites");
   const settingsBtn = document.getElementById("settings-btn");
+  const difficultySelector = document.getElementById("difficulty-selector");
 
   if (filterChk) {
     filterChk.checked = showOnlyPending;
@@ -233,6 +283,32 @@ function bindStaticEvents() {
   }
   if (testBtn) testBtn.onclick = toggleTestOverlay;
   if (settingsBtn) settingsBtn.onclick = openSettingsModal;
+
+  // Event per al selector de dificultat
+  if (difficultySelector) {
+    difficultySelector.onchange = () => {
+      if (!selected) return;
+      const newDifficulty = difficultySelector.value;
+      fetch(`${DIFFICULTIES_API}/${selected}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ difficulty: newDifficulty }),
+      })
+        .then((r) => {
+          if (!r.ok) throw new Error();
+          if (newDifficulty) {
+            difficulties[selected] = newDifficulty;
+          } else {
+            delete difficulties[selected];
+          }
+          renderFileList(); // Actualitza la llista per mostrar/amagar etiquetes
+        })
+        .catch(() => {
+          alert("Error desant dificultat");
+          updateDifficultySelector(); // Reverteix selector
+        });
+    };
+  }
 }
 
 // Funcions per la configuració general
@@ -472,7 +548,7 @@ function updateTestSelectionUI() {
 }
 
 function fetchFiles() {
-  // Carrega llistat, validacions i preferits en paral·lel
+  // Carrega llistat, validacions, preferits i dificultats en paral·lel
   Promise.all([
     fetch(RANKINGS_API, { headers: { ...authHeaders() } }).then((r) =>
       r.json()
@@ -483,10 +559,14 @@ function fetchFiles() {
     fetch(FAVORITES_API, {
       headers: { ...authHeaders() },
     }).then((r) => r.json()),
-  ]).then(([flist, vals, favs]) => {
+    fetch(DIFFICULTIES_API, {
+      headers: { ...authHeaders() },
+    }).then((r) => r.json()),
+  ]).then(([flist, vals, favs, diffs]) => {
     files = flist;
     validations = vals || {};
     favorites = favs || {};
+    difficulties = diffs || {};
     renderFileList();
   });
 }
@@ -495,7 +575,8 @@ function renderFileList() {
   const ul = document.getElementById("file-list");
   ul.innerHTML = "";
   files.forEach((f) => {
-    const isValidated = !!validations[f];
+    const validationStatus = validations[f] || "";
+    const isValidated = !!validationStatus; // true if 'validated' or 'approved'
     const isFavorite = !!favorites[f];
     if (showOnlyPending && isValidated) return;
     if (showOnlyFavorites && !isFavorite) return;
@@ -506,45 +587,62 @@ function renderFileList() {
     span.style.flex = "1";
     const chkId = `val-${f}`;
     const starId = `fav-${f}`;
-    const checked = !!validations[f];
+    const valState = getValidationState(f);
+    const difficulty = difficulties[f] || "";
+    const difficultyTag = difficulty ? getDifficultyTag(difficulty) : "";
     span.innerHTML = `
-      <input type="checkbox" class="form-check-input me-2 validate-chk" id="${chkId}" ${
-      checked ? "checked" : ""
-    } title="Marca com a fet" />
+      <input type="checkbox" class="form-check-input me-2 validate-chk ${
+        valState.className
+      }" id="${chkId}" ${valState.checked ? "checked" : ""} title="${
+      valState.title
+    }" />
       <button class="star-btn ${
         isFavorite ? "favorite" : ""
       }" id="${starId}" title="Marca com a preferit" type="button">
         <i class="bi ${isFavorite ? "bi-star-fill" : "bi-star"}"></i>
       </button>
       <label for="${chkId}" class="form-check-label" style="cursor:pointer;">${f}</label>
+      ${difficultyTag}
     `;
     li.appendChild(span);
     li.onclick = () => loadFile(f);
-    // Checkbox toggle (aturar propagació per no carregar el fitxer automàticament)
+    // Checkbox toggle amb tres estats (aturar propagació per no carregar el fitxer automàticament)
     const chk = span.querySelector("input");
-    if (checked) chk.classList.add("validated-yes");
     chk.addEventListener("click", (e) => {
       e.stopPropagation();
-      const newVal = e.target.checked;
+      e.preventDefault(); // Prevenim el comportament per defecte per controlar manualment els estats
+
+      const currentStatus = validations[f] || "";
+      let newStatus = "";
+
+      // Cicle dels tres estats: no validat -> validat -> aprovat -> no validat
+      if (currentStatus === "") {
+        newStatus = "validated";
+      } else if (currentStatus === "validated") {
+        newStatus = "approved";
+      } else if (currentStatus === "approved") {
+        newStatus = "";
+      }
+
       fetch(`${VALIDATIONS_API}/${f}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ validated: newVal }),
+        body: JSON.stringify({ validated: newStatus }),
       })
         .then((r) => {
           if (!r.ok) throw new Error();
-          if (newVal) {
-            validations[f] = true;
-            chk.classList.add("validated-yes");
+          if (newStatus) {
+            validations[f] = newStatus;
           } else {
             delete validations[f];
-            chk.classList.remove("validated-yes");
           }
-          if (showOnlyPending && newVal) renderFileList();
+          // Re-renderitza la llista per actualitzar l'aparença
+          renderFileList();
+          if (showOnlyPending && newStatus) renderFileList();
         })
         .catch(() => {
-          e.target.checked = !newVal; // revert
           alert("Error desant validació");
+          renderFileList(); // Reverteix en cas d'error
         });
     });
 
@@ -612,6 +710,8 @@ function loadFile(filename) {
   lastMoveInfo = null;
   renderFileList();
   renderWordsArea();
+  updateWordsTitle(); // Actualitza títol en carregar fitxer
+  updateDifficultySelector(); // Actualitza selector de dificultat
   fetch(`${RANKINGS_API}/${filename}?offset=0&limit=${PAGE_SIZE}`, {
     headers: { ...authHeaders() },
   })
@@ -621,8 +721,43 @@ function loadFile(filename) {
       total = data.total;
       loading = false;
       renderWordsArea();
+      updateWordsTitle(); // Actualitza títol després de carregar dades
+      updateDifficultySelector(); // Actualitza selector després de carregar dades
       refreshTestOverlayIfVisible();
     });
+}
+
+// Actualitza el títul amb la paraula en posició 0
+function updateWordsTitle() {
+  const titleEl = document.getElementById("words-title");
+  if (!titleEl) return;
+
+  if (!selected) {
+    titleEl.textContent = "Paraules";
+    return;
+  }
+
+  // Si tenim la paraula en posició 0 carregada, l'utilitzem
+  if (wordsByPos[0] && wordsByPos[0].word) {
+    titleEl.textContent = `Paraules - ${wordsByPos[0].word}`;
+  } else {
+    titleEl.textContent = "Paraules";
+  }
+}
+
+// Actualitza el selector de dificultat
+function updateDifficultySelector() {
+  const selector = document.getElementById("difficulty-selector");
+  if (!selector) return;
+
+  if (!selected) {
+    selector.style.display = "none";
+    return;
+  }
+
+  selector.style.display = "block";
+  const currentDifficulty = difficulties[selected] || "";
+  selector.value = currentDifficulty;
 }
 
 function renderWordsArea() {
@@ -636,6 +771,8 @@ function renderWordsArea() {
     prevScrollTop = existingList.scrollTop;
   }
   area.innerHTML = "";
+  updateWordsTitle(); // Actualitza títol sempre que es renderitza
+  updateDifficultySelector(); // Actualitza selector sempre que es renderitza
   if (!selected) {
     area.innerHTML =
       '<div style="color:#888">Selecciona un fitxer per veure les paraules.</div>';
@@ -1000,6 +1137,7 @@ async function reloadInitialBlock() {
   data.words.forEach((w) => (wordsByPos[w.pos] = w));
   total = data.total;
   renderWordsArea();
+  updateWordsTitle(); // Actualitza títol després de recarregar
   refreshTestOverlayIfVisible();
 }
 
@@ -1264,6 +1402,10 @@ function loadMoreGap(start, endKnown) {
       });
       total = data.total;
       renderWordsArea();
+      // Actualitza títol si s'ha carregat la posició 0
+      if (start === 0 && data.words.some((w) => w.pos === 0)) {
+        updateWordsTitle();
+      }
       // Després de renderitzar, calculem nou límit contigu i marquem nous ítems
       let newContiguousEnd = 0;
       while (wordsByPos[newContiguousEnd]) newContiguousEnd++;

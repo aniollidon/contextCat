@@ -14,6 +14,7 @@ WORDS_DIR.mkdir(parents=True, exist_ok=True)
 
 VALIDATIONS_PATH = Path(__file__).parent / "data" / "validacions.json"
 FAVORITES_PATH = Path(__file__).parent / "data" / "preferits.json"
+DIFFICULTIES_PATH = Path(__file__).parent / "data" / "dificultats.json"
 
 def _load_validations() -> dict:
     if VALIDATIONS_PATH.exists():
@@ -50,6 +51,24 @@ def _save_favorites(data: dict):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         raise HTTPException(status_code=500, detail="No s'ha pogut desar preferits")
+
+def _load_difficulties() -> dict:
+    if DIFFICULTIES_PATH.exists():
+        try:
+            with open(DIFFICULTIES_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {}
+
+def _save_difficulties(data: dict):
+    try:
+        with open(DIFFICULTIES_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        raise HTTPException(status_code=500, detail="No s'ha pogut desar dificultats")
 
 ADMIN_PORT = int(os.getenv("ADMIN_PORT", 5001))
 
@@ -118,11 +137,18 @@ def get_validations(_: None = Depends(require_auth)):
 def get_favorites(_: None = Depends(require_auth)):
     return _load_favorites()
 
+@app.get("/api/difficulties")
+def get_difficulties(_: None = Depends(require_auth)):
+    return _load_difficulties()
+
 class ValidationUpdate(BaseModel):
-    validated: bool
+    validated: str  # 'validated', 'approved', or empty string to remove
 
 class FavoriteUpdate(BaseModel):
     favorite: bool
+
+class DifficultyUpdate(BaseModel):
+    difficulty: str  # 'facil', 'mitja', 'dificil', or empty string to remove
 
 @app.post("/api/validations/{filename}")
 def set_validation(filename: str, upd: ValidationUpdate, _: None = Depends(require_auth)):
@@ -130,11 +156,17 @@ def set_validation(filename: str, upd: ValidationUpdate, _: None = Depends(requi
     file_path = WORDS_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Fitxer no trobat")
+    
+    # Valida que la validació sigui vàlida
+    valid_statuses = ['validated', 'approved']
+    if upd.validated and upd.validated not in valid_statuses:
+        raise HTTPException(status_code=400, detail="Estat de validació no vàlid")
+    
     vals = _load_validations()
     if upd.validated:
-        vals[filename] = True
+        vals[filename] = upd.validated
     else:
-        # remove key if false to keep file small
+        # remove key if empty to keep file small
         if filename in vals:
             del vals[filename]
     _save_validations(vals)
@@ -155,6 +187,28 @@ def set_favorite(filename: str, upd: FavoriteUpdate, _: None = Depends(require_a
             del favs[filename]
     _save_favorites(favs)
     return {"ok": True, "favorite": upd.favorite}
+
+@app.post("/api/difficulties/{filename}")
+def set_difficulty(filename: str, upd: DifficultyUpdate, _: None = Depends(require_auth)):
+    # accept only existing ranking files
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat")
+    
+    # Valida que la dificultat sigui vàlida
+    valid_difficulties = ['facil', 'mitja', 'dificil']
+    if upd.difficulty and upd.difficulty not in valid_difficulties:
+        raise HTTPException(status_code=400, detail="Dificultat no vàlida")
+    
+    diffs = _load_difficulties()
+    if upd.difficulty:
+        diffs[filename] = upd.difficulty
+    else:
+        # remove key if empty to keep file small
+        if filename in diffs:
+            del diffs[filename]
+    _save_difficulties(diffs)
+    return {"ok": True, "difficulty": upd.difficulty}
 
 from fastapi import Query
 

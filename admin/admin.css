@@ -14,9 +14,19 @@
   accent-color: #2e7d32; /* verd modern */
 }
 
+.validate-chk.validated-approved {
+  accent-color: #1976d2; /* blau modern */
+}
+
 /* Fallback si accent-color no aplicable: contorn verd */
 .validate-chk.validated-yes:not(:focus) {
   background-color: #74c978;
+  outline-offset: 1px;
+}
+
+/* Fallback si accent-color no aplicable: contorn blau */
+.validate-chk.validated-approved:not(:focus) {
+  background-color: #42a5f5;
   outline-offset: 1px;
 }
 .form-check-input:checked{
@@ -26,9 +36,19 @@
 .form-check-input:checked {
   background-color: #74c978;
 }
+
+.validate-chk.validated-approved:checked {
+  background-color: #42a5f5;
+}
+
 .form-check-input:focus{
   border-color: #74c978;
       box-shadow: 0 0 0 .25rem #74c9783c;
+}
+
+.validate-chk.validated-approved:focus{
+  border-color: #42a5f5;
+      box-shadow: 0 0 0 .25rem #42a5f53c;
 }
 
 /* Personalització lleugera per sobre de Bootstrap */
