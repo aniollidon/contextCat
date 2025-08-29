@@ -1,5 +1,5 @@
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
@@ -122,6 +122,16 @@ class RendirseRequest(BaseModel):
 
 class RendirseResponse(BaseModel):
     paraula_correcta: str
+
+class RankingItem(BaseModel):
+    paraula: str
+    posicio: int
+
+class RankingListResponse(BaseModel):
+    paraula_dia: str
+    total_paraules: int
+    objectiu: str
+    ranking: List[RankingItem]
 
 
 @app.post("/guess", response_model=GuessResponse)
@@ -322,6 +332,32 @@ async def rendirse(request: RendirseRequest):
             status_code=500,
             detail=f"Error en rendir-se: {str(e)}"
         )
+
+@app.get("/ranking", response_model=RankingListResponse)
+async def obtenir_ranking(limit: int = Query(300, ge=1, le=2000), paraula_dia: Optional[str] = None):
+    """Retorna les primeres 'limit' paraules del rànquing per la paraula del dia actual o l'especificada.
+
+    Parameters
+    ----------
+    limit: int
+        Nombre màxim de paraules a retornar (per defecte 300, màxim 2000)
+    paraula_dia: Optional[str]
+        Paraula del dia per la qual es vol obtenir el rànquing (opcional)
+    """
+    try:
+        ranking_diccionari, _formes, total_paraules, paraula_objectiu = obtenir_ranking_actiu(paraula_dia)
+        # Ordenar per posició (valor més petit = més proper)
+        ordenat = sorted(ranking_diccionari.items(), key=lambda kv: kv[1])[:limit]
+        return RankingListResponse(
+            paraula_dia=paraula_dia.lower() if paraula_dia else PARAULA_DIA,
+            total_paraules=total_paraules,
+            objectiu=paraula_objectiu,
+            ranking=[RankingItem(paraula=p, posicio=pos) for p, pos in ordenat]
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error obtenint el rànquing: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
