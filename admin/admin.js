@@ -413,56 +413,164 @@ async function loadTestOverlayData() {
   overlay.style.display = "block";
   overlay.innerHTML =
     '<div class="text-muted small">Carregant paraules test…</div>';
+
   try {
-    const res = await fetch(`${RANKINGS_API}/${selected}/test-words`, {
-      headers: { ...authHeaders() },
-    });
-    if (!res.ok) throw new Error();
-    const data = await res.json();
+    // Carrega ambdós tests en paral·lel
+    const [commonResponse, aiResponse] = await Promise.all([
+      fetch(`${RANKINGS_API}/${selected}/test-words`, {
+        headers: { ...authHeaders() },
+      }),
+      fetch(`${RANKINGS_API}/${selected}/test-words-ai`, {
+        headers: { ...authHeaders() },
+      }).catch(() => null), // No fa error si no existeix el fitxer AI
+    ]);
+
     if (!testVisible) return; // si s'ha tancat mentre carregava
-    const rows = data.words
-      .map((w) => {
-        if (w.found) {
-          return `<div class="test-row"><span style="color:${colorPerPos(
-            w.pos
-          )}">${w.word}</span> <a href="#" data-pos="${
-            w.pos
-          }" class="jump" title="Ves a posició">(${w.pos})</a></div>`;
-        }
-        return `<div class="test-row text-muted"><span>${w.word}</span> <span style="font-size:11px">(no)</span></div>`;
-      })
-      .join("");
-    overlay.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-      <strong class="small">Paraules test (${data.count})</strong>
-      <div class="btn-group btn-group-sm" role="group">
-        <button class="btn btn-outline-success" id="add-test-inside" title="Afegeix paraules al test">+Add</button>
-        <button class="btn btn-outline-secondary" id="toggle-test-select" title="Mode selecció">Sel</button>
-        <button class="btn btn-outline-danger" id="delete-selected-test" style="display:none;" title="Elimina seleccionades">Del</button>
-        <button class="btn btn-outline-secondary" id="close-test" title="Tanca">✕</button>
-      </div>
-    </div><div class="test-body" id="test-body" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${rows}</div>`;
-    const closeBtn = document.getElementById("close-test");
-    if (closeBtn) closeBtn.onclick = () => hideTestOverlay();
-    initTestWordSelection();
-    const addInside = document.getElementById("add-test-inside");
-    if (addInside) addInside.onclick = addTestWordsPrompt;
-    overlay.querySelectorAll("a.jump").forEach((a) => {
-      a.addEventListener("click", async (e) => {
-        e.preventDefault();
-        const p = parseInt(a.getAttribute("data-pos"), 10);
-        await ensureVisible(p, {
-          highlight: true,
-          special: true,
-          force: p >= PAGE_SIZE,
-          forceScroll: true, // Sempre fa scroll quan es va des de test
-        });
-      });
-    });
+
+    if (!commonResponse.ok) throw new Error("Error carregant test comú");
+    const commonData = await commonResponse.json();
+
+    let aiData = null;
+    if (aiResponse && aiResponse.ok) {
+      aiData = await aiResponse.json();
+    }
+
+    renderTestTabs(commonData, aiData, overlay);
   } catch (e) {
     overlay.innerHTML =
       '<div class="text-danger small">Error carregant test</div>';
   }
 }
+
+function renderTestTabs(commonData, aiData, overlay) {
+  const hasAiTest = aiData && aiData.words && aiData.words.length > 0;
+
+  let tabsHtml = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div class="btn-group btn-group-sm" role="group">
+        <button class="btn btn-outline-primary active" id="tab-common" onclick="switchTestTab('common')">Test Comú (${
+          commonData.count
+        })</button>
+        ${
+          hasAiTest
+            ? `<button class="btn btn-outline-info" id="tab-ai" onclick="switchTestTab('ai')">Test IA (${aiData.count})</button>`
+            : ""
+        }
+      </div>
+      <div class="btn-group btn-group-sm" role="group">
+        <button class="btn btn-outline-success" id="add-test-inside" title="Afegeix paraules al test comú">+Add</button>
+        <button class="btn btn-outline-secondary" id="toggle-test-select" title="Mode selecció">Sel</button>
+        <button class="btn btn-outline-danger" id="delete-selected-test" style="display:none;" title="Elimina seleccionades">Del</button>
+        <button class="btn btn-outline-secondary" id="close-test" title="Tanca">✕</button>
+      </div>
+    </div>
+  `;
+
+  // Contingut de les pestanyes
+  const commonRows = commonData.words
+    .map((w) => {
+      if (w.found) {
+        return `<div class="test-row" data-word="${
+          w.word
+        }"><span style="color:${colorPerPos(w.pos)}">${
+          w.word
+        }</span> <a href="#" data-pos="${
+          w.pos
+        }" class="jump" title="Ves a posició">(${w.pos})</a></div>`;
+      }
+      return `<div class="test-row" data-word="${w.word}"><span class="text-muted">${w.word}</span> <span style="font-size:11px">(no)</span></div>`;
+    })
+    .join("");
+
+  let aiRows = "";
+  if (hasAiTest) {
+    aiRows = aiData.words
+      .map((w) => {
+        if (w.found) {
+          return `<div class="test-row-ai"><span style="color:${colorPerPos(
+            w.pos
+          )}">${w.word}</span> <a href="#" data-pos="${
+            w.pos
+          }" class="jump" title="Ves a posició">(${w.pos})</a></div>`;
+        }
+        return `<div class="test-row-ai"><span class="text-muted">${w.word}</span> <span style="font-size:11px">(no)</span></div>`;
+      })
+      .join("");
+  }
+
+  overlay.innerHTML = `
+    ${tabsHtml}
+    <div id="test-common-content" class="test-tab-content" style="display:block;">
+      <div class="test-body" id="test-body" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${commonRows}</div>
+    </div>
+    ${
+      hasAiTest
+        ? `
+    <div id="test-ai-content" class="test-tab-content" style="display:none;">
+      <div class="test-body-ai" id="test-body-ai" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${aiRows}</div>
+    </div>`
+        : ""
+    }
+  `;
+
+  // Assigna events
+  const closeBtn = document.getElementById("close-test");
+  if (closeBtn) closeBtn.onclick = () => hideTestOverlay();
+
+  const addInside = document.getElementById("add-test-inside");
+  if (addInside) addInside.onclick = addTestWordsPrompt;
+
+  initTestWordSelection();
+
+  // Assigna events per saltar a posicions
+  overlay.querySelectorAll("a.jump").forEach((a) => {
+    a.addEventListener("click", async (e) => {
+      e.preventDefault();
+      const p = parseInt(a.getAttribute("data-pos"), 10);
+      await ensureVisible(p, {
+        highlight: true,
+        special: true,
+        force: p >= PAGE_SIZE,
+        forceScroll: true,
+      });
+    });
+  });
+}
+
+// Canvia entre pestanyes del test
+window.switchTestTab = function (tabName) {
+  // Actualitza botons de pestanya
+  document
+    .querySelectorAll('#test-overlay .btn-group button[id^="tab-"]')
+    .forEach((btn) => {
+      btn.classList.remove("active");
+    });
+  document.getElementById(`tab-${tabName}`).classList.add("active");
+
+  // Mostra/amaga contingut
+  document.querySelectorAll(".test-tab-content").forEach((content) => {
+    content.style.display = "none";
+  });
+  document.getElementById(`test-${tabName}-content`).style.display = "block";
+
+  // Actualitza botons d'acció (només per test comú)
+  const addBtn = document.getElementById("add-test-inside");
+  const selectBtn = document.getElementById("toggle-test-select");
+  const deleteBtn = document.getElementById("delete-selected-test");
+
+  const isCommonTab = tabName === "common";
+  if (addBtn) addBtn.style.display = isCommonTab ? "inline-block" : "none";
+  if (selectBtn)
+    selectBtn.style.display = isCommonTab ? "inline-block" : "none";
+  if (deleteBtn && tabName !== "common") deleteBtn.style.display = "none";
+
+  // Reinicia la selecció si canviem de pestanya
+  if (tabName !== "common") {
+    testSelectMode = false;
+    selectedTestWords.clear();
+    updateTestSelectionUI();
+  }
+};
 
 function refreshTestOverlayIfVisible() {
   if (testVisible) loadTestOverlayData();

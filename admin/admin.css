@@ -229,3 +229,22 @@
   box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.25);
   border-radius: 2px;
 }
+
+/* Test IA - estils específics */
+.test-row-ai {
+  padding: 4px;
+  border-radius: 4px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+}
+
+.test-tab-content {
+  margin-top: 8px;
+}
+
+/* Pestanyes del test */
+#test-overlay .btn-group .btn.active {
+  background-color: #0d6efd;
+  color: white;
+  border-color: #0d6efd;
+}

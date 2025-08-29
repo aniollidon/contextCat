@@ -443,6 +443,44 @@ def ranking_test_words(filename: str, _: None = Depends(require_auth)):
             out.append({"word": w, "found": False})
     return {"count": len(out), "words": out}
 
+@app.get("/api/rankings/{filename}/test-words-ai")
+def ranking_test_words_ai(filename: str, _: None = Depends(require_auth)):
+    """Retorna les paraules del fitxer .ai.json corresponent amb la seva posició al ranking."""
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat.")
+    
+    # Busca el fitxer .ai.json corresponent
+    base_name = filename.replace('.json', '')
+    ai_file_path = WORDS_DIR / "ai" / f"{base_name}.ai.json"
+    
+    if not ai_file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer .ai.json no trobat")
+    
+    try:
+        with open(ai_file_path, encoding="utf-8") as f:
+            ai_data = json.load(f)
+        if "paraules" not in ai_data:
+            raise Exception("Format .ai.json invàlid")
+        ai_words = ai_data["paraules"]
+    except Exception:
+        raise HTTPException(status_code=500, detail="No s'ha pogut llegir el fitxer .ai.json")
+    
+    with open(file_path, encoding="utf-8") as f:
+        ranking = json.load(f)  # dict word->pos
+    
+    out = []
+    for w in ai_words:
+        wl = str(w).strip().lower()
+        if not wl:
+            continue
+        if wl in ranking:
+            out.append({"word": w, "found": True, "pos": ranking[wl]})
+        else:
+            out.append({"word": w, "found": False})
+    
+    return {"count": len(out), "words": out}
+
 @app.post("/api/test-words")
 def add_test_words(req: AddTestWordsRequest, _: None = Depends(require_auth)):
     """Afegeix paraules al fitxer data/test.json (evitant duplicats). Accepta 'word' o 'words'."""
