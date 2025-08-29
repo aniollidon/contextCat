@@ -230,12 +230,57 @@
   border-radius: 2px;
 }
 
-/* Test IA - estils específics */
-.test-row-ai {
+/* Estils uniformes per a tots els tests */
+.test-row,
+.test-row-ai,
+.test-row-synonyms {
   padding: 4px;
   border-radius: 4px;
   background: #f8f9fa;
   border: 1px solid #e9ecef;
+  box-sizing: border-box;
+  line-height: 1.2;
+  height: 29.28px;
+  display: flex;
+  align-items: center;
+}
+
+/* Estils per drag & drop dels tests */
+.test-row[draggable="true"],
+.test-row-ai[draggable="true"],
+.test-row-synonyms[draggable="true"] {
+  cursor: grab;
+  transition: opacity 0.2s;
+}
+
+.test-row[draggable="true"]:active,
+.test-row-ai[draggable="true"]:active,
+.test-row-synonyms[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.jump{
+  margin-left: 3px;
+}
+
+/* Grups de sinònims */
+.synonym-group {
+  border-left: 3px solid #c5c5c5;
+  padding-left: 8px;
+  margin-left: 4px;
+}
+
+.synonym-group-header {
+  background: #f8f9fa;
+  padding: 3px 6px;
+  border-radius: 3px;
+  border: 1px solid #e9ecef;
+  cursor: help;
+  transition: background-color 0.2s;
+}
+
+.synonym-group-header:hover {
+  background: #e9ecef;
 }
 
 .test-tab-content {

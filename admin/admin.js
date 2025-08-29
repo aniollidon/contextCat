@@ -1,12 +1,13 @@
 // Configuració
 const PORT = 3000; // Port on corre el backend admin (uvicorn)
-const SERVER = `http://5.250.190.223:${PORT}`;
+const SERVER = `http://localhost:${PORT}`;
 // Bases d'API
 const API_BASE = `${SERVER}/api`;
 const RANKINGS_API = `${API_BASE}/rankings`;
 const VALIDATIONS_API = `${API_BASE}/validations`;
 const FAVORITES_API = `${API_BASE}/favorites`;
 const DIFFICULTIES_API = `${API_BASE}/difficulties`;
+const SYNONYMS_API = `${API_BASE}/synonyms`;
 const AUTH_ENDPOINT = `${API_BASE}/auth`;
 const GENERATE_ENDPOINT = `${API_BASE}/generate`; // alternatiu
 const GENERATE_RANDOM_ENDPOINT = `${API_BASE}/generate-random`;
@@ -214,7 +215,7 @@ function renderApp() {
               <button class="btn btn-outline-info" id="show-test" type="button" title="Mostra paraules test">Test</button>
             </div>
             <div id="words-area" style="min-height:120px;"></div>
-            <div id="test-overlay" style="display:none; max-height:220px; overflow:auto; border:1px solid #ddd; border-radius:6px; padding:6px; background:#fff; margin-top:8px;"></div>
+            <div id="test-overlay" style="display:none; max-height:330px; overflow:auto; border:1px solid #ddd; border-radius:6px; padding:6px; background:#fff; margin-top:8px;"></div>
           </div>
         </div>
       </div>
@@ -415,14 +416,17 @@ async function loadTestOverlayData() {
     '<div class="text-muted small">Carregant paraules test…</div>';
 
   try {
-    // Carrega ambdós tests en paral·lel
-    const [commonResponse, aiResponse] = await Promise.all([
+    // Carrega tots els tests en paral·lel
+    const [commonResponse, aiResponse, synonymsResponse] = await Promise.all([
       fetch(`${RANKINGS_API}/${selected}/test-words`, {
         headers: { ...authHeaders() },
       }),
       fetch(`${RANKINGS_API}/${selected}/test-words-ai`, {
         headers: { ...authHeaders() },
       }).catch(() => null), // No fa error si no existeix el fitxer AI
+      fetch(`${RANKINGS_API}/${selected}/test-words-synonyms`, {
+        headers: { ...authHeaders() },
+      }).catch(() => null), // No fa error si no hi ha sinònims
     ]);
 
     if (!testVisible) return; // si s'ha tancat mentre carregava
@@ -435,15 +439,22 @@ async function loadTestOverlayData() {
       aiData = await aiResponse.json();
     }
 
-    renderTestTabs(commonData, aiData, overlay);
+    let synonymsData = null;
+    if (synonymsResponse && synonymsResponse.ok) {
+      synonymsData = await synonymsResponse.json();
+    }
+
+    renderTestTabs(commonData, aiData, synonymsData, overlay);
   } catch (e) {
     overlay.innerHTML =
       '<div class="text-danger small">Error carregant test</div>';
   }
 }
 
-function renderTestTabs(commonData, aiData, overlay) {
+function renderTestTabs(commonData, aiData, synonymsData, overlay) {
   const hasAiTest = aiData && aiData.words && aiData.words.length > 0;
+  const hasSynonymsTest =
+    synonymsData && synonymsData.groups && synonymsData.groups.length > 0;
 
   let tabsHtml = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -453,7 +464,12 @@ function renderTestTabs(commonData, aiData, overlay) {
         })</button>
         ${
           hasAiTest
-            ? `<button class="btn btn-outline-info" id="tab-ai" onclick="switchTestTab('ai')">Test IA (${aiData.count})</button>`
+            ? `<button class="btn btn-outline-primary" id="tab-ai" onclick="switchTestTab('ai')">Test IA (${aiData.count})</button>`
+            : ""
+        }
+        ${
+          hasSynonymsTest
+            ? `<button class="btn btn-outline-primary" id="tab-synonyms" onclick="switchTestTab('synonyms')">SC sinònims (${synonymsData.count})</button>`
             : ""
         }
       </div>
@@ -472,13 +488,13 @@ function renderTestTabs(commonData, aiData, overlay) {
       if (w.found) {
         return `<div class="test-row" data-word="${
           w.word
-        }"><span style="color:${colorPerPos(w.pos)}">${
-          w.word
-        }</span> <a href="#" data-pos="${
+        }" draggable="true" style="cursor: grab;"><span style="color:${colorPerPos(
           w.pos
-        }" class="jump" title="Ves a posició">(${w.pos})</a></div>`;
+        )}">${w.word}</span> <a href="#" data-pos="${
+          w.pos
+        }" class="jump" title="Ves a posició"> (${w.pos})</a></div>`;
       }
-      return `<div class="test-row" data-word="${w.word}"><span class="text-muted">${w.word}</span> <span style="font-size:11px">(no)</span></div>`;
+      return `<div class="test-row" data-word="${w.word}"><span class="text-muted">${w.word}</span> <span class="jump" style="font-size:11px">(no)</span></div>`;
     })
     .join("");
 
@@ -487,15 +503,55 @@ function renderTestTabs(commonData, aiData, overlay) {
     aiRows = aiData.words
       .map((w) => {
         if (w.found) {
-          return `<div class="test-row-ai"><span style="color:${colorPerPos(
+          return `<div class="test-row-ai" data-word="${
+            w.word
+          }" draggable="true" style="cursor: grab;"><span style="color:${colorPerPos(
             w.pos
           )}">${w.word}</span> <a href="#" data-pos="${
             w.pos
-          }" class="jump" title="Ves a posició">(${w.pos})</a></div>`;
+          }" class="jump" title="Ves a posició"> (${w.pos})</a></div>`;
         }
-        return `<div class="test-row-ai"><span class="text-muted">${w.word}</span> <span style="font-size:11px">(no)</span></div>`;
+        return `<div class="test-row-ai"><span class="text-muted">${w.word}</span> <span class="jump" style="font-size:11px">(no)</span></div>`;
       })
       .join("");
+  }
+
+  let synonymsRows = "";
+  if (hasSynonymsTest) {
+    if (synonymsData.groups && synonymsData.groups.length > 0) {
+      synonymsRows = synonymsData.groups
+        .map((group, groupIndex) => {
+          const groupWords = group.words
+            .map((w) => {
+              if (w.found) {
+                return `<div class="test-row-synonyms" data-word="${
+                  w.word
+                }" draggable="true" style="cursor: grab;"><span style="color:${colorPerPos(
+                  w.pos
+                )}">${w.word}</span> <a href="#" data-pos="${
+                  w.pos
+                }" class="jump" title="Ves a posició"> (${w.pos})</a></div>`;
+              }
+              return `<div class="test-row-synonyms"><span class="text-muted">${w.word}</span> <span class="jump" style="font-size:11px">(no)</span></div>`;
+            })
+            .join("");
+
+          return `
+            <div class="synonym-group" style="margin-bottom: 12px;">
+              <div class="synonym-group-header" style="font-size: 11px; color: #666; margin-bottom: 4px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${group.original_line}">
+                ${group.original_line}
+              </div>
+              <div style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">
+                ${groupWords}
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    } else {
+      synonymsRows =
+        '<div class="text-muted small">No s\'han trobat sinònims per aquesta paraula</div>';
+    }
   }
 
   overlay.innerHTML = `
@@ -508,6 +564,14 @@ function renderTestTabs(commonData, aiData, overlay) {
         ? `
     <div id="test-ai-content" class="test-tab-content" style="display:none;">
       <div class="test-body-ai" id="test-body-ai" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${aiRows}</div>
+    </div>`
+        : ""
+    }
+    ${
+      hasSynonymsTest
+        ? `
+    <div id="test-synonyms-content" class="test-tab-content" style="display:none;">
+      <div class="test-body-synonyms" id="test-body-synonyms" style="font-size:13px;">${synonymsRows}</div>
     </div>`
         : ""
     }
@@ -535,10 +599,40 @@ function renderTestTabs(commonData, aiData, overlay) {
       });
     });
   });
+
+  // Assigna events de drag & drop per paraules del test amb posició
+  overlay.querySelectorAll("[draggable='true']").forEach((draggableEl) => {
+    draggableEl.addEventListener("dragstart", (e) => {
+      const word = draggableEl.getAttribute("data-word");
+      e.dataTransfer.setData("text/plain", word);
+      e.dataTransfer.setData("application/x-test-word", word);
+      draggableEl.style.opacity = "0.5";
+    });
+
+    draggableEl.addEventListener("dragend", (e) => {
+      draggableEl.style.opacity = "1";
+    });
+  });
 }
 
 // Canvia entre pestanyes del test
 window.switchTestTab = function (tabName) {
+  // Guarda scroll actual de l'overlay per al tab actiu
+  const overlay = document.getElementById("test-overlay");
+  if (overlay) {
+    const activeBtn = document.querySelector(
+      "#test-overlay .btn-group button.active"
+    );
+    let currentTab = testState.activeTab;
+    if (activeBtn) {
+      const id = activeBtn.id;
+      if (id === "tab-common") currentTab = "common";
+      else if (id === "tab-ai") currentTab = "ai";
+      else if (id === "tab-synonyms") currentTab = "synonyms";
+    }
+    testState.scrollPositions[currentTab] = overlay.scrollTop || 0;
+  }
+
   // Actualitza botons de pestanya
   document
     .querySelectorAll('#test-overlay .btn-group button[id^="tab-"]')
@@ -547,11 +641,19 @@ window.switchTestTab = function (tabName) {
     });
   document.getElementById(`tab-${tabName}`).classList.add("active");
 
-  // Mostra/amaga contingut
+  // Mostra/amaga contingut (reset de display dels contenidors)
   document.querySelectorAll(".test-tab-content").forEach((content) => {
     content.style.display = "none";
   });
   document.getElementById(`test-${tabName}-content`).style.display = "block";
+  // Restaura overlay.scrollTop per aquest tab
+  if (overlay) {
+    const saved = testState.scrollPositions[tabName];
+    if (saved != null) overlay.scrollTop = saved;
+  }
+
+  // Actualitza l'estat
+  testState.activeTab = tabName;
 
   // Actualitza botons d'acció (només per test comú)
   const addBtn = document.getElementById("add-test-inside");
@@ -572,8 +674,79 @@ window.switchTestTab = function (tabName) {
   }
 };
 
+// Variables per mantenir l'estat del test durant recarregues
+let testState = {
+  activeTab: "common",
+  // scrollPositions guarda el scroll vertical de l'overlay per cada tab
+  scrollPositions: {},
+  lastScroll: 0,
+};
+// Config restauració scroll
+const TEST_SCROLL_RESTORE_MAX_ATTEMPTS = 20;
+const TEST_SCROLL_RESTORE_INTERVAL = 70; // ms
+function attemptOverlayScroll(desired, attempt = 1) {
+  const overlay = document.getElementById("test-overlay");
+  if (!overlay) return;
+  // Si overlay encara no té prou height (offsetHeight ~ clientHeight i scrollHeight petit) seguim intentant
+  overlay.scrollTop = desired;
+  const done = Math.abs((overlay.scrollTop || 0) - desired) < 3;
+  if (done) return;
+  if (attempt >= TEST_SCROLL_RESTORE_MAX_ATTEMPTS) return;
+  setTimeout(
+    () => attemptOverlayScroll(desired, attempt + 1),
+    TEST_SCROLL_RESTORE_INTERVAL
+  );
+}
+
+// Guarda l'estat actual del test abans de recarregar
+function saveTestState() {
+  if (!testVisible) return;
+  const overlay = document.getElementById("test-overlay");
+  const activeTabBtn = document.querySelector(
+    "#test-overlay .btn-group button.active"
+  );
+  if (activeTabBtn) {
+    const tabId = activeTabBtn.id;
+    if (tabId === "tab-common") testState.activeTab = "common";
+    else if (tabId === "tab-ai") testState.activeTab = "ai";
+    else if (tabId === "tab-synonyms") testState.activeTab = "synonyms";
+  }
+  if (overlay) {
+    const current = overlay.scrollTop || 0;
+    testState.scrollPositions[testState.activeTab] = current;
+    testState.lastScroll = current;
+  }
+}
+
+// Restaura l'estat del test després de recarregar
+function restoreTestState(desiredOverride) {
+  if (!testVisible || !testState.activeTab) return;
+  const desired =
+    desiredOverride ??
+    testState.scrollPositions[testState.activeTab] ??
+    testState.lastScroll ??
+    0;
+  switchTestTab(testState.activeTab); // això rehidrata contingut de la pestanya
+  // Cadena d'intents: rAF + setTimeout + loop controlat
+  requestAnimationFrame(() => {
+    attemptOverlayScroll(desired, 1);
+  });
+}
+
 function refreshTestOverlayIfVisible() {
-  if (testVisible) loadTestOverlayData();
+  if (!testVisible) return;
+  saveTestState();
+  const prevActive = testState.activeTab;
+  const prevScroll = testState.scrollPositions[prevActive];
+  // Afegim classe de placeholder mentre carrega per evitar salt visual
+  const overlay = document.getElementById("test-overlay");
+  if (overlay) overlay.classList.add("loading-test-refresh");
+  loadTestOverlayData().then(() => {
+    if (overlay) overlay.classList.remove("loading-test-refresh");
+    testState.activeTab = prevActive;
+    if (prevScroll != null) testState.scrollPositions[prevActive] = prevScroll;
+    restoreTestState(prevScroll);
+  });
 }
 
 // --- Selecció discreta per eliminar paraules test ---
@@ -1006,35 +1179,94 @@ function onDragEnd(e, item) {
 }
 function onDragOver(e, pos, item) {
   e.preventDefault();
-  if (dragIdx === null || dragIdx === 0 || pos === 0 || dragIdx === pos) return;
-  document
-    .querySelectorAll(".word-item.drag-over")
-    .forEach((el) => el.classList.remove("drag-over"));
-  item.classList.add("drag-over");
+
+  // Permet drop de paraules del test o drag & drop normal
+  const testWord = e.dataTransfer.getData("application/x-test-word");
+  if (
+    testWord ||
+    (dragIdx !== null && dragIdx !== 0 && pos !== 0 && dragIdx !== pos)
+  ) {
+    document
+      .querySelectorAll(".word-item.drag-over")
+      .forEach((el) => el.classList.remove("drag-over"));
+    item.classList.add("drag-over");
+  }
 }
 function onDrop(e, pos, item) {
   e.preventDefault();
+
+  // Comprova si és una paraula del test
+  const testWord = e.dataTransfer.getData("application/x-test-word");
+  if (testWord) {
+    // És una paraula arrossegada des d'un test
+    insertWordFromTest(testWord, pos);
+    return;
+  }
+
+  // Drag & drop normal dins de la llista
   if (dragIdx === null || dragIdx === 0 || pos === 0 || dragIdx === pos) return;
-  // Construïm bloc contigu inicial
-  let contiguousEnd = 0;
-  while (wordsByPos[contiguousEnd]) contiguousEnd++;
-  const arr = [];
-  for (let i = 0; i < contiguousEnd; i++) arr.push(wordsByPos[i]);
+
   const fromIndex = dragIdx;
   const toIndex = pos;
-  const [moved] = arr.splice(fromIndex, 1);
-  arr.splice(toIndex, 0, moved);
-  for (let i = 0; i < arr.length; i++)
-    wordsByPos[i] = { word: arr[i].word, pos: i };
-  dirty = true;
   dragIdx = null;
-  renderWordsArea();
-  setTimeout(() => {
-    const wordItems = document.querySelectorAll(".word-item");
-    if (wordItems[toIndex]) tempHighlightElement(wordItems[toIndex]);
-  }, 0);
-  scheduleAutoSave();
-  refreshTestOverlayIfVisible();
+
+  // Paraula a moure (pot no estar carregada si s'ha mogut prèviament), obtenim del bloc si existeix
+  const wObj = wordsByPos[fromIndex];
+  if (!wObj) {
+    // Fallback: recarrega bloc inicial i surt
+    reloadInitialBlock();
+    return;
+  }
+  // Desa estat (scroll test) abans d'actualitzar
+  saveTestState();
+  unifiedInsertOrMove(wObj.word, toIndex, { highlight: true });
+}
+
+// Insereix una paraula del test a una posició específica
+async function insertWordFromTest(word, targetPos) {
+  if (!word || targetPos === 0) return;
+  saveTestState();
+  unifiedInsertOrMove(word, targetPos, { highlight: true });
+}
+
+// Funció unificada per inserir o moure una paraula al rànquing
+async function unifiedInsertOrMove(word, toPos, options = {}) {
+  if (!selected) return;
+  const { highlight = false } = options;
+  try {
+    const res = await fetch(`${RANKINGS_API}/${selected}/insert-or-move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ word, to_pos: toPos }),
+    });
+    if (!res.ok) throw new Error("Error inserint/movent");
+    const data = await res.json();
+    total = data.total;
+    // Recarrega bloc inicial per mantenir coherència (no marquem dirty: backend ja és font de veritat)
+    await reloadInitialBlock();
+    if (highlight) {
+      setTimeout(() => {
+        const wordItems = document.querySelectorAll(".word-item");
+        wordItems.forEach((el) => {
+          if (
+            el.firstChild &&
+            el.firstChild.textContent &&
+            el.firstChild.textContent.startsWith(`${data.to}.`)
+          ) {
+            tempHighlightElement(
+              el,
+              1200,
+              data.action === "inserted" ? "moved-special" : "moved"
+            );
+          }
+        });
+      }, 0);
+    }
+    refreshTestOverlayIfVisible();
+  } catch (e) {
+    console.error("unifiedInsertOrMove error", e);
+    alert("No s'ha pogut actualitzar el rànquing");
+  }
 }
 
 // Menú contextual
@@ -1436,23 +1668,35 @@ function deleteFile(filename) {
 
 // Guardar fitxer
 function saveFile() {
-  if (!selected) return;
-  // Bloc contigu inicial
+  // NOMÉS desa si hi ha canvis i un fitxer seleccionat
+  if (!selected || !dirty) return;
+
+  // Detecta el bloc contigu inicial carregat (0..contiguousEnd-1)
   let contiguousEnd = 0;
   while (wordsByPos[contiguousEnd]) contiguousEnd++;
-  const ranking = {};
-  for (let i = 0; i < contiguousEnd; i++) ranking[wordsByPos[i].word] = i;
+
+  // IMPORTANT: No podem sobreescriure tot el fitxer només amb aquest bloc
+  // perquè perdríem la resta de paraules. Usem el mode "fragment" del backend
+  // que actualitza només aquest tram mantenint la resta intacta.
+  // L'endpoint interpreta l'ordre de les CLAUS del fragment; els valors s'ignoren.
+  const fragment = {};
+  for (let i = 0; i < contiguousEnd; i++) {
+    fragment[wordsByPos[i].word] = i; // valor informatiu (no utilitzat pel backend)
+  }
+
   const status = document.getElementById("autosave-status");
   if (status) {
     status.style.display = "inline";
     status.textContent = "Desant…";
   }
+
   fetch(`${RANKINGS_API}/${selected}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ fragment: ranking, offset: 0 }),
+    body: JSON.stringify({ fragment, offset: 0 }),
   })
-    .then(() => {
+    .then((r) => {
+      if (!r.ok) throw new Error();
       dirty = false;
       showAutoSaveDone();
       refreshTestOverlayIfVisible();

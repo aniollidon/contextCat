@@ -6,6 +6,8 @@ from pydantic import BaseModel
 import json
 from pathlib import Path
 from dotenv import load_dotenv
+import requests
+import re
 
 load_dotenv()
 
@@ -15,6 +17,9 @@ WORDS_DIR.mkdir(parents=True, exist_ok=True)
 VALIDATIONS_PATH = Path(__file__).parent / "data" / "validacions.json"
 FAVORITES_PATH = Path(__file__).parent / "data" / "preferits.json"
 DIFFICULTIES_PATH = Path(__file__).parent / "data" / "dificultats.json"
+SYNONYMS_PATH = Path(__file__).parent / "data" / "sinonims.txt"
+
+SYNONYMS_URL = "https://raw.githubusercontent.com/Softcatala/sinonims-cat/refs/heads/master/dict/sinonims.txt"
 
 def _load_validations() -> dict:
     if VALIDATIONS_PATH.exists():
@@ -70,6 +75,85 @@ def _save_difficulties(data: dict):
     except Exception:
         raise HTTPException(status_code=500, detail="No s'ha pogut desar dificultats")
 
+def _download_synonyms():
+    """Descarrega el fitxer de sinònims si no existeix."""
+    if SYNONYMS_PATH.exists():
+        return True
+    
+    try:
+        print("Descarregant fitxer de sinònims...")
+        response = requests.get(SYNONYMS_URL)
+        response.raise_for_status()
+        
+        # Assegura que el directori existeix
+        SYNONYMS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(SYNONYMS_PATH, 'w', encoding='utf-8') as f:
+            f.write(response.text)
+        
+        print(f"✓ Fitxer de sinònims descarregat a {SYNONYMS_PATH}")
+        return True
+    except Exception as e:
+        print(f"Error descarregant sinònims: {e}")
+        return False
+
+def _get_synonyms_for_word(word: str) -> list:
+    """Obté els sinònims d'una paraula del fitxer de sinònims agrupats per línia."""
+    if not SYNONYMS_PATH.exists():
+        return []
+    
+    word_lower = word.lower().strip()
+    synonym_groups = []
+    
+    try:
+        with open(SYNONYMS_PATH, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                # Elimina comentaris al final de la línia (tot després de #)
+                if '#' in line:
+                    line = line.split('#')[0].strip()
+                    if not line:  # Si després d'eliminar el comentari no queda res
+                        continue
+                
+                original_line = line
+                
+                # Elimina la categoria gramatical (tot fins als :)
+                if ':' in line:
+                    line = line.split(':', 1)[1].strip()
+                
+                # Divideix per comes per obtenir les paraules
+                words_in_line = [w.strip() for w in line.split(',')]
+                
+                # Si la paraula base està en aquesta línia, afegeix el grup sencer
+                words_clean = []
+                for w in words_in_line:
+                    # Elimina acotacions entre parèntesi
+                    w_clean = re.sub(r'\([^)]*\)', '', w).strip()
+                    if w_clean:
+                        words_clean.append(w_clean.lower())
+                
+                if word_lower in words_clean:
+                    # Afegeix tots els sinònims d'aquesta línia (excepte la paraula base)
+                    group_synonyms = []
+                    for syn in words_clean:
+                        if syn != word_lower and syn:
+                            group_synonyms.append(syn)
+                    
+                    if group_synonyms:
+                        synonym_groups.append({
+                            'line_num': line_num,
+                            'original_line': original_line,
+                            'synonyms': group_synonyms
+                        })
+        
+        return synonym_groups
+    except Exception as e:
+        print(f"Error llegint fitxer de sinònims: {e}")
+        return []
+
 ADMIN_PORT = int(os.getenv("ADMIN_PORT", 5001))
 
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
@@ -84,13 +168,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class RankingFile(BaseModel):
-    filename: str
-    data: Dict[str, int]
 
 class MoveRequest(BaseModel):
     from_pos: int
     to_pos: int
+
+class InsertOrMoveRequest(BaseModel):
+    word: str  # paraula a inserir o moure
+    to_pos: int  # posició destí (0 <= to_pos <= len)
 
 class GenerateRequest(BaseModel):
     word: str
@@ -238,43 +323,29 @@ from fastapi import Request
 
 @app.post("/api/rankings/{filename}")
 async def save_ranking(filename: str, request: Request, _: None = Depends(require_auth)):
+    """Actualitza només un fragment (offset + claus ordenades) preservant la resta del rànquing."""
     file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat.")
     body = await request.json()
-    # Si rep fragment i offset, només actualitza el tram
-    if "fragment" in body and "offset" in body:
-        fragment: dict = body["fragment"]
-        offset: int = body["offset"]
-        # Carrega l'original
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="Fitxer no trobat.")
-        with open(file_path, encoding="utf-8") as f:
-            data = json.load(f)
-        # Construeix la llista ordenada
-        items = sorted(data.items(), key=lambda x: x[1])
-        # Actualitza el fragment
-        keys = list(fragment.keys())
-        for i, k in enumerate(keys):
-            items[offset + i] = (k, offset + i)
-        # Reconstrueix el dict
-        new_data = {k: i for i, (k, _) in enumerate(items)}
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(new_data, f, ensure_ascii=False, indent=2)
-        return {"ok": True}
-    # Si no, comportament antic (tot el fitxer)
-    else:
-        data = body
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return {"ok": True}
-
-@app.post("/api/rankings")
-def create_ranking(ranking: RankingFile, _: None = Depends(require_auth)):
-    file_path = WORDS_DIR / ranking.filename
-    if file_path.exists():
-        raise HTTPException(status_code=400, detail="Ja existeix.")
+    if "fragment" not in body or "offset" not in body:
+        raise HTTPException(status_code=400, detail="Cal fragment i offset")
+    fragment: dict = body["fragment"]
+    offset: int = body["offset"]
+    with open(file_path, encoding="utf-8") as f:
+        data = json.load(f)
+    items = sorted(data.items(), key=lambda x: x[1])
+    keys = list(fragment.keys())
+    # Assegura longitud suficient
+    if offset + len(keys) > len(items):
+        raise HTTPException(status_code=400, detail="Fragment excedeix longitud")
+    for i, k in enumerate(keys):
+        items[offset + i] = (k, offset + i)
+    new_data = {k: i for i, (k, _) in enumerate(items)}
     with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(ranking.data, f, ensure_ascii=False, indent=2)
+        json.dump(new_data, f, ensure_ascii=False, indent=2)
     return {"ok": True}
+
 
 @app.post("/api/rankings/{filename}/move")
 def move_word(filename: str, move: MoveRequest, _: None = Depends(require_auth)):
@@ -299,14 +370,67 @@ def move_word(filename: str, move: MoveRequest, _: None = Depends(require_auth))
         json.dump(new_data, f, ensure_ascii=False, indent=2)
     return {"ok": True, "word": word, "from": move.from_pos, "to": move.to_pos, "total": total}
 
-@app.post("/api/rankings/generate")
-def generate_ranking(req: GenerateRequest, _: None = Depends(require_auth)):
-    """Genera un fitxer de rànquing per a una paraula (similar a generate.py)."""
+@app.post("/api/rankings/{filename}/insert-or-move")
+def insert_or_move_word(filename: str, req: InsertOrMoveRequest, _: None = Depends(require_auth)):
+    """Insereix una paraula nova a la posició indicada o mou una existent a la nova posició.
+    Manté la integritat de tot el rànquing i reindexa.
+    - Si la paraula existeix: es mou (length invariant)
+    - Si no existeix: s'insereix (length +1)
+    """
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat.")
+    word = req.word.strip().lower()
+    if not word:
+        raise HTTPException(status_code=400, detail="Paraula buida")
+    if req.to_pos < 0:
+        raise HTTPException(status_code=400, detail="Posició negativa")
+    with open(file_path, encoding="utf-8") as f:
+        data = json.load(f)
+    items = sorted(data.items(), key=lambda x: x[1])  # [(word,pos),...]
+    original_len = len(items)
+    # Localitza si existeix
+    existing_index = next((i for i, (w, _) in enumerate(items) if w == word), None)
+    inserting = existing_index is None
+    # Normalitza to_pos dins límits
+    to_pos = min(max(0, req.to_pos), original_len if inserting else original_len - 1)
+    from_pos = None
+    if inserting:
+        # Inserció nova
+        items.insert(to_pos, (word, to_pos))
+    else:
+        from_pos = existing_index
+        if from_pos == to_pos:
+            return {"ok": True, "action": "noop", "word": word, "from": from_pos, "to": to_pos, "total": original_len}
+        # Extreu i re-insereix
+        wtuple = items.pop(from_pos)
+        # Ajust si l'element es mou cap avall (remoció abans redueix índexs)
+        if from_pos < to_pos:
+            to_pos -= 1
+        items.insert(to_pos, wtuple)
+    # Reindexa
+    new_data = {w: i for i, (w, _) in enumerate(items)}
+    expected_len = original_len + (1 if inserting else 0)
+    if len(new_data) != expected_len:
+        raise HTTPException(status_code=500, detail="Inconsistència de longitud")
+    # Desa
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(new_data, f, ensure_ascii=False, indent=2)
+    return {
+        "ok": True,
+        "action": "inserted" if inserting else "moved",
+        "word": word,
+        "from": from_pos,
+        "to": to_pos,
+        "total": expected_len,
+    }
 
+@app.post("/api/generate")
+def generate_ranking(req: GenerateRequest, _: None = Depends(require_auth)):
+    """Genera un fitxer de rànquing per a una paraula (únic endpoint)."""
     # Si és linux retorna un error
     if sys.platform.startswith("linux"):
         raise HTTPException(status_code=400, detail="No es pot generar rànquing en sistemes Linux.")
-
     word = req.word.strip().lower()
     if not word:
         raise HTTPException(status_code=400, detail="Paraula buida")
@@ -314,7 +438,6 @@ def generate_ranking(req: GenerateRequest, _: None = Depends(require_auth)):
     file_path = WORDS_DIR / filename
     if file_path.exists():
         raise HTTPException(status_code=400, detail="Ja existeix")
-    # Carrega diccionari (si ja s'ha generat prèviament, reutilitza'l)
     diccionari_json = Path("data/diccionari.json")
     from diccionari import Diccionari
     if diccionari_json.exists():
@@ -326,7 +449,6 @@ def generate_ranking(req: GenerateRequest, _: None = Depends(require_auth)):
     else:
         dicc = Diccionari.obtenir_diccionari()
         dicc.save(str(diccionari_json))
-    # Carrega model fastText
     from proximitat import carregar_model_fasttext, calcular_ranking_complet
     model = carregar_model_fasttext()
     paraules = dicc.totes_les_lemes()
@@ -334,12 +456,6 @@ def generate_ranking(req: GenerateRequest, _: None = Depends(require_auth)):
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(ranking, f, ensure_ascii=False, indent=2)
     return {"ok": True, "filename": filename, "total": len(ranking)}
-
-# Endpoint alternatiu sense conflicte amb /api/rankings/{filename}
-@app.post("/api/generate")
-def generate_ranking_alt(req: GenerateRequest, _: None = Depends(require_auth)):
-    """Mateixa funcionalitat que /api/rankings/generate però evita conflictes de routing."""
-    return generate_ranking(req)
 
 # Cache globals per evitar recàrregues costoses
 _DICC = None
@@ -481,6 +597,48 @@ def ranking_test_words_ai(filename: str, _: None = Depends(require_auth)):
     
     return {"count": len(out), "words": out}
 
+@app.get("/api/rankings/{filename}/test-words-synonyms")
+def ranking_test_words_synonyms(filename: str, _: None = Depends(require_auth)):
+    """Retorna els sinònims de la paraula base agrupats per línia amb la seva posició al ranking."""
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat.")
+    
+    # Extreu la paraula base del nom del fitxer
+    base_word = filename.replace('.json', '').lower().strip()
+    
+    # Obté els grups de sinònims
+    synonym_groups = _get_synonyms_for_word(base_word)
+    if not synonym_groups:
+        return {"count": 0, "groups": []}
+    
+    with open(file_path, encoding="utf-8") as f:
+        ranking = json.load(f)  # dict word->pos
+    
+    out_groups = []
+    total_count = 0
+    
+    for group in synonym_groups:
+        group_words = []
+        for w in group['synonyms']:
+            wl = str(w).strip().lower()
+            if not wl:
+                continue
+            if wl in ranking:
+                group_words.append({"word": w, "found": True, "pos": ranking[wl]})
+            else:
+                group_words.append({"word": w, "found": False})
+            total_count += 1
+        
+        if group_words:
+            out_groups.append({
+                "line_num": group['line_num'],
+                "original_line": group['original_line'],
+                "words": group_words
+            })
+    
+    return {"count": total_count, "groups": out_groups}
+
 @app.post("/api/test-words")
 def add_test_words(req: AddTestWordsRequest, _: None = Depends(require_auth)):
     """Afegeix paraules al fitxer data/test.json (evitant duplicats). Accepta 'word' o 'words'."""
@@ -601,6 +759,10 @@ if __name__ == "__main__":
                     return await call_next(request)
             else:
                 print("[WARN] Carpeta 'admin' no trobada; no es servirà el frontend.")
+        
+        # Descarrega sinònims si no existeix
+        _download_synonyms()
+        
         # Executa servidor
         uvicorn.run(app, host="0.0.0.0", port=ADMIN_PORT, reload=False)
     except ImportError:
