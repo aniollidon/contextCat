@@ -387,17 +387,6 @@ async function addTestWordsPrompt() {
   }
 }
 
-let testVisible = false;
-async function toggleTestOverlay() {
-  if (!selected) return;
-  if (testVisible) {
-    hideTestOverlay();
-  } else {
-    testVisible = true;
-    await loadTestOverlayData();
-  }
-}
-
 function hideTestOverlay() {
   testVisible = false;
   const overlay = document.getElementById("test-overlay");
@@ -1318,6 +1307,28 @@ async function refreshLoadedAfter(startPos) {
 // Si expandPos s'especifica (inserció), s'amplia en +1 la franja que contingui aquesta posició
 // per capturar l'últim element que hagi pogut desplaçar-se fora.
 async function refreshAllLoadedRanges(expandPos = null) {
+  // Retorna la màxima posició actualment carregada (o null si cap)
+  function getMaxLoadedPos() {
+    const keys = Object.keys(wordsByPos);
+    if (!keys.length) return null;
+    return keys.map(Number).reduce((a, b) => (b > a ? b : a), -1);
+  }
+
+  // Refetch d'un tram i inserció directa al map
+  async function refetchChunk(offset, limit) {
+    try {
+      const res = await fetch(
+        `${RANKINGS_API}/${selected}?offset=${offset}&limit=${limit}`,
+        { headers: { ...authHeaders() } }
+      );
+      const data = await res.json();
+      if (data.words) data.words.forEach((w) => (wordsByPos[w.pos] = w));
+      total = data.total;
+      renderWordsArea();
+    } catch (e) {
+      console.warn("refetchChunk error", e);
+    }
+  }
   const loaded = Object.keys(wordsByPos)
     .map(Number)
     .sort((a, b) => a - b);
