@@ -1468,12 +1468,15 @@ async function reloadInitialBlock() {
     }
   );
   const data = await res.json();
-  // Esborra bloc inicial anterior
-  let i = 0;
-  while (wordsByPos[i]) {
-    delete wordsByPos[i];
-    i++;
-  }
+  // REFRESH PARCIAL: Només actualitzem el primer bloc (0..PAGE_SIZE-1)
+  // Abans eliminàvem TOT el tram contigu començant per 0 fins trobar un forat, cosa que
+  // podia incloure posicions > PAGE_SIZE si l'usuari havia carregat més blocs (ex: 0..599).
+  // Això feia desaparèixer les paraules >300 després de moure'n una i forçar reload.
+  // Ara només eliminem i substituïm les posicions < PAGE_SIZE i preservem la resta.
+  Object.keys(wordsByPos).forEach((k) => {
+    const p = parseInt(k, 10);
+    if (p < PAGE_SIZE) delete wordsByPos[p];
+  });
   data.words.forEach((w) => (wordsByPos[w.pos] = w));
   total = data.total;
   renderWordsArea();
