@@ -1076,8 +1076,9 @@ function renderWordsArea() {
     const w = wordsByPos[pos];
     const item = document.createElement("div");
     const isFirst = pos === 0;
-    const draggableAllowed = !isFirst && pos < contiguousEnd;
-    item.className = "word-item" + (draggableAllowed ? " draggable" : "");
+    // Nova política: qualsevol posició carregada (excepte 0) es pot arrossegar encara que no formi part del bloc contigu inicial.
+    const draggableSource = !isFirst;
+    item.className = "word-item" + (draggableSource ? " draggable" : "");
     const txt = document.createElement("span");
     txt.className = "word-text";
     txt.textContent = `${pos}. ${w.word}`;
@@ -1096,10 +1097,13 @@ function renderWordsArea() {
       menuBtn.onmousedown = (e) => e.stopPropagation();
       item.appendChild(menuBtn);
     }
-    if (draggableAllowed) {
+    if (draggableSource) {
       item.draggable = true;
       item.addEventListener("dragstart", (e) => onDragStart(e, pos, item));
       item.addEventListener("dragend", (e) => onDragEnd(e, item));
+    }
+    // Qualsevol item (excepte posició 0) pot ser destinació de drop, encara que ell mateix no sigui arrossegable (futur canvi)
+    if (!isFirst) {
       item.addEventListener("dragover", (e) => onDragOver(e, pos, item));
       item.addEventListener("drop", (e) => onDrop(e, pos, item));
     } else if (isFirst) {
