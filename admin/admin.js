@@ -396,6 +396,17 @@ function hideTestOverlay() {
   }
 }
 
+// Restaurat: funció per mostrar/amagar overlay de test
+async function toggleTestOverlay() {
+  if (!selected) return;
+  if (testVisible) {
+    hideTestOverlay();
+  } else {
+    testVisible = true;
+    await loadTestOverlayData();
+  }
+}
+
 async function loadTestOverlayData() {
   if (!testVisible || !selected) return;
   const overlay = document.getElementById("test-overlay");
