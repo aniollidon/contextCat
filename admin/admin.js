@@ -1214,7 +1214,7 @@ function onDrop(e, pos, item) {
   const wObj = wordsByPos[fromIndex];
   if (!wObj) {
     // Fallback: recarrega bloc inicial i surt
-    reloadInitialBlock();
+    refreshAllLoadedRanges();
     return;
   }
   // Desa estat (scroll test) abans d'actualitzar
@@ -1245,11 +1245,13 @@ async function unifiedInsertOrMove(word, toPos, options = {}) {
     if (!res.ok) throw new Error("Error inserint/movent");
     const data = await res.json();
     total = data.total;
-    // Recarrega bloc inicial per mantenir coherència (no marquem dirty: backend ja és font de veritat)
-    const changedPos = fromPos != null ? Math.min(fromPos, data.to) : data.to;
-    await reloadInitialBlock();
-    // Recarrega les posicions carregades superiors afectades pel desplaçament
-    await refreshLoadedAfter(changedPos + 1);
+    // Recarrega totes les franges contigües carregades, expandint si hi ha inserció dins d'una franja
+    const expandPos = data.action === "inserted" ? data.to : null;
+    await refreshAllLoadedRanges(expandPos);
+    if (!wordsByPos[data.to]) {
+      // Si la posició destí no era en cap franja carregada, carrega-la puntualment
+      await ensureVisible(data.to, { highlight: false, force: true });
+    }
     if (highlight) highlightMovedWord(data.to, data.action === "inserted");
     refreshTestOverlayIfVisible();
   } catch (e) {
@@ -1307,6 +1309,51 @@ async function refreshLoadedAfter(startPos) {
       if (data.words) data.words.forEach((w) => (wordsByPos[w.pos] = w));
     } catch (_) {
       // ignore errors individuals
+    }
+  }
+  renderWordsArea();
+}
+
+// Recarrega totes les franges contigües actualment carregades.
+// Si expandPos s'especifica (inserció), s'amplia en +1 la franja que contingui aquesta posició
+// per capturar l'últim element que hagi pogut desplaçar-se fora.
+async function refreshAllLoadedRanges(expandPos = null) {
+  const loaded = Object.keys(wordsByPos)
+    .map(Number)
+    .sort((a, b) => a - b);
+  if (!loaded.length) return;
+  // Detecta franges contigües
+  const ranges = [];
+  let start = loaded[0];
+  let prev = loaded[0];
+  for (let i = 1; i < loaded.length; i++) {
+    const p = loaded[i];
+    if (p === prev + 1) {
+      prev = p;
+      continue;
+    }
+    ranges.push([start, prev]);
+    start = p;
+    prev = p;
+  }
+  ranges.push([start, prev]);
+  // Fes fetch per cada franja
+  for (const [a, b] of ranges) {
+    const containsExpand =
+      expandPos != null && expandPos >= a && expandPos <= b;
+    const len = b - a + 1 + (containsExpand ? 1 : 0);
+    // Esborra posicions locals d'aquesta franja (evita duplicats posteriors)
+    for (let p = a; p <= b; p++) delete wordsByPos[p];
+    try {
+      const res = await fetch(
+        `${RANKINGS_API}/${selected}?offset=${a}&limit=${len}`,
+        { headers: { ...authHeaders() } }
+      );
+      const data = await res.json();
+      if (data.words) data.words.forEach((w) => (wordsByPos[w.pos] = w));
+      total = data.total;
+    } catch (_) {
+      // ignore errors
     }
   }
   renderWordsArea();
