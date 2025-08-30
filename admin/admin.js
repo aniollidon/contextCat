@@ -1219,7 +1219,10 @@ function onDrop(e, pos, item) {
   }
   // Desa estat (scroll test) abans d'actualitzar
   saveTestState();
-  unifiedInsertOrMove(wObj.word, toIndex, { highlight: true });
+  unifiedInsertOrMove(wObj.word, toIndex, {
+    highlight: true,
+    fromPos: fromIndex,
+  });
 }
 
 // Insereix una paraula del test a una posició específica
@@ -1232,7 +1235,7 @@ async function insertWordFromTest(word, targetPos) {
 // Funció unificada per inserir o moure una paraula al rànquing
 async function unifiedInsertOrMove(word, toPos, options = {}) {
   if (!selected) return;
-  const { highlight = false } = options;
+  const { highlight = false, fromPos = null } = options;
   try {
     const res = await fetch(`${RANKINGS_API}/${selected}/insert-or-move`, {
       method: "POST",
@@ -1243,30 +1246,70 @@ async function unifiedInsertOrMove(word, toPos, options = {}) {
     const data = await res.json();
     total = data.total;
     // Recarrega bloc inicial per mantenir coherència (no marquem dirty: backend ja és font de veritat)
+    const changedPos = fromPos != null ? Math.min(fromPos, data.to) : data.to;
     await reloadInitialBlock();
-    if (highlight) {
-      setTimeout(() => {
-        const wordItems = document.querySelectorAll(".word-item");
-        wordItems.forEach((el) => {
-          if (
-            el.firstChild &&
-            el.firstChild.textContent &&
-            el.firstChild.textContent.startsWith(`${data.to}.`)
-          ) {
-            tempHighlightElement(
-              el,
-              1200,
-              data.action === "inserted" ? "moved-special" : "moved"
-            );
-          }
-        });
-      }, 0);
-    }
+    // Recarrega les posicions carregades superiors afectades pel desplaçament
+    await refreshLoadedAfter(changedPos + 1);
+    if (highlight) highlightMovedWord(data.to, data.action === "inserted");
     refreshTestOverlayIfVisible();
   } catch (e) {
     console.error("unifiedInsertOrMove error", e);
     alert("No s'ha pogut actualitzar el rànquing");
   }
+}
+
+function highlightMovedWord(pos, special) {
+  setTimeout(() => {
+    const wordItems = document.querySelectorAll(".word-item");
+    wordItems.forEach((el) => {
+      if (
+        el.firstChild &&
+        el.firstChild.textContent &&
+        el.firstChild.textContent.startsWith(`${pos}.`)
+      ) {
+        tempHighlightElement(el, 1500, special ? "moved-special" : "moved");
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }, 0);
+}
+
+// Recarrega (refetch) els trams contigus ja carregats amb posició >= startPos
+async function refreshLoadedAfter(startPos) {
+  // Detecta rangs contigus de posicions carregades >= startPos (excloent les < PAGE_SIZE perquè ja s'han refrescat)
+  const loaded = Object.keys(wordsByPos)
+    .map(Number)
+    .filter((p) => p >= startPos)
+    .sort((a, b) => a - b);
+  if (!loaded.length) return;
+  const ranges = [];
+  let rangeStart = loaded[0];
+  let prev = loaded[0];
+  for (let i = 1; i < loaded.length; i++) {
+    const p = loaded[i];
+    if (p === prev + 1) {
+      prev = p;
+      continue;
+    }
+    ranges.push([rangeStart, prev]);
+    rangeStart = p;
+    prev = p;
+  }
+  ranges.push([rangeStart, prev]);
+  for (const [a, b] of ranges) {
+    const len = b - a + 1;
+    try {
+      const res = await fetch(
+        `${RANKINGS_API}/${selected}?offset=${a}&limit=${len}`,
+        { headers: { ...authHeaders() } }
+      );
+      const data = await res.json();
+      if (data.words) data.words.forEach((w) => (wordsByPos[w.pos] = w));
+    } catch (_) {
+      // ignore errors individuals
+    }
+  }
+  renderWordsArea();
 }
 
 // Menú contextual
