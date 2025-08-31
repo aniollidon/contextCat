@@ -6,7 +6,7 @@ from diccionari import Diccionari
 
 def main():
     parser = argparse.ArgumentParser(description="Genera fitxers de rànquing de paraules en format JSON.")
-    parser.add_argument("--paraula", type=str, required=False, help="Paraula objectiu per calcular el rànquing")
+    parser.add_argument("--paraula", type=str, required=False, help="Paraula o llista de paraules separades per comes per calcular els rànquings")
     parser.add_argument("--random", type=int, required=False, help="Nombre de paraules aleatòries per generar rànquings")
     parser.add_argument("--output", type=str, required=False, help="Fitxer de sortida per al rànquing (JSON). Per defecte: data/words/[PARAULA].json")
     parser.add_argument("--freq-min", type=int, default=20, help="Freqüència mínima per filtrar paraules")
@@ -28,19 +28,33 @@ def main():
     FT_MODEL = carregar_model_fasttext()
     paraules = dicc.totes_les_lemes(freq_min=args.freq_min)
 
-    # Si s'ha especificat --paraula
+    # Si s'ha especificat --paraula (pot ser llista separada per comes)
     if args.paraula:
-        output_path = args.output
-        if not output_path:
-            import os
-            os.makedirs("data/words", exist_ok=True)
-            output_path = f"data/words/{args.paraula}.json"
-        print(f"Calculant rànquing per a la paraula: {args.paraula}")
-        ranking = calcular_ranking_complet(args.paraula, paraules, FT_MODEL)
-        print(f"Guardant rànquing a {output_path}")
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(ranking, f, ensure_ascii=False, indent=2)
-        print("Fet!")
+        paraules_input = [p.strip() for p in args.paraula.split(',') if p.strip()]
+        if not paraules_input:
+            print("Cap paraula vàlida proporcionada a --paraula")
+        else:
+            for p in paraules_input:
+                if args.output:
+                    # Si l'usuari ha passat un path que acaba amb .json i només hi ha una paraula, usem tal qual
+                    if args.output.endswith('.json') and len(paraules_input) == 1:
+                        output_path = args.output
+                    else:
+                        # Tractem output com a directori base
+                        import os
+                        base_dir = args.output
+                        os.makedirs(base_dir, exist_ok=True)
+                        output_path = os.path.join(base_dir, f"{p}.json")
+                else:
+                    import os
+                    os.makedirs("data/words", exist_ok=True)
+                    output_path = f"data/words/{p}.json"
+                print(f"Calculant rànquing per a la paraula: {p}")
+                ranking = calcular_ranking_complet(p, paraules, FT_MODEL)
+                print(f"Guardant rànquing a {output_path}")
+                with open(output_path, "w", encoding="utf-8") as f:
+                    json.dump(ranking, f, ensure_ascii=False, indent=2)
+            print("Fet!")
 
     # Si s'ha especificat --random
     if args.random:
