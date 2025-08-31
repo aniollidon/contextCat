@@ -212,6 +212,7 @@ function renderApp() {
             <div class="input-group input-group-sm mb-2">
               <input id="search-word" type="text" class="form-control" placeholder="Cerca paraula..." />
               <button class="btn btn-outline-secondary" id="search-btn" type="button" title="Cerca">Cerca</button>
+              <button class="btn btn-outline-success" id="add-new-word-btn" type="button" title="Afegeix una paraula nova al rànquing">+Nou</button>
               <button class="btn btn-outline-info" id="show-test" type="button" title="Mostra paraules test">Test</button>
             </div>
             <div id="words-area" style="min-height:120px;"></div>
@@ -257,6 +258,7 @@ function bindStaticEvents() {
   const searchBtn = document.getElementById("search-btn");
   const searchInput = document.getElementById("search-word");
   const testBtn = document.getElementById("show-test");
+  const addNewBtn = document.getElementById("add-new-word-btn");
   const filterChk = document.getElementById("filter-pending");
   const favoritesChk = document.getElementById("filter-favorites");
   const settingsBtn = document.getElementById("settings-btn");
@@ -283,6 +285,7 @@ function bindStaticEvents() {
     });
   }
   if (testBtn) testBtn.onclick = toggleTestOverlay;
+  if (addNewBtn) addNewBtn.onclick = promptAddNewWord;
   if (settingsBtn) settingsBtn.onclick = openSettingsModal;
 
   // Event per al selector de dificultat
@@ -1843,4 +1846,77 @@ function triggerSearch(term) {
       await ensureVisible(res.pos, { highlight: true, forceScroll: true });
     })
     .catch(() => alert("Error en la cerca"));
+}
+
+// --- Afegir paraula nova al rànquing ---
+async function promptAddNewWord() {
+  if (!selected) return alert("Cal seleccionar un rànquing");
+  const raw = prompt(
+    "Escriu la paraula (nom o verb en forma canònica, sense flexió).\nAbans d'afegir recorda: només lemes (ex: 'anar', 'casa', no 'anant', 'cases').",
+    ""
+  );
+  if (raw === null) return; // cancel·lat
+  const word = (raw || "").trim().toLowerCase();
+  if (!word) return;
+  // Consulta info de lema
+  let lemmaInfo = null;
+  try {
+    const r = await fetch(
+      `${API_BASE}/lemma-info/${encodeURIComponent(word)}`,
+      {
+        headers: { ...authHeaders() },
+      }
+    );
+    if (r.ok) lemmaInfo = await r.json();
+  } catch (_) {}
+  let warning = "Segur que vols afegir '" + word + "'?\n";
+  if (lemmaInfo) {
+    if (!lemmaInfo.is_known) {
+      warning +=
+        "No s'ha trobat al diccionari; comprova bé que sigui un lema.\n";
+    } else if (lemmaInfo.is_inflection) {
+      warning += `ATENCIÓ: sembla una flexió del lema '${lemmaInfo.lemma}'.\n`;
+    } else if (lemmaInfo.lemma && lemmaInfo.lemma === word) {
+      warning += "Detectat com a lema vàlid.\n";
+    }
+  }
+  warning +=
+    "Confirma per afegir-la al final (o escriu una posició concreta).\n\nIntrodueix posició numèrica o deixa en blanc per posar-la al final.";
+  const posStr = prompt(warning, "");
+  if (posStr === null) return; // cancel
+  let toPos = null;
+  if (posStr.trim()) {
+    const n = parseInt(posStr.trim(), 10);
+    if (!isNaN(n) && n >= 0) toPos = n;
+  }
+  try {
+    const res = await fetch(`${RANKINGS_API}/${selected}/add-new`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ word, to_pos: toPos }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Error" }));
+      alert(err.detail || "Error afegint paraula");
+      return;
+    }
+    const data = await res.json();
+    // Recarrega primer bloc i assegura visibilitat de la nova posició
+    await reloadInitialBlock();
+    await ensureVisible(data.to, {
+      highlight: true,
+      special: true,
+      force: data.to >= PAGE_SIZE,
+    });
+    alert(
+      `Afegida '${data.word}' a posició ${data.to}.` +
+        (data.is_inflection
+          ? `\nNota: sembla flexió del lema '${data.lemma}'.`
+          : data.lemma
+          ? "\nConfirmat com a lema."
+          : "")
+    );
+  } catch (e) {
+    alert("Error de xarxa");
+  }
 }

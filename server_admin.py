@@ -8,6 +8,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import requests
 import re
+from datetime import datetime
 
 load_dotenv()
 
@@ -18,6 +19,7 @@ VALIDATIONS_PATH = Path(__file__).parent / "data" / "validacions.json"
 FAVORITES_PATH = Path(__file__).parent / "data" / "preferits.json"
 DIFFICULTIES_PATH = Path(__file__).parent / "data" / "dificultats.json"
 SYNONYMS_PATH = Path(__file__).parent / "data" / "sinonims.txt"
+NEW_WORDS_PATH = Path(__file__).parent / "data" / "noves_paraules.json"
 
 SYNONYMS_URL = "https://raw.githubusercontent.com/Softcatala/sinonims-cat/refs/heads/master/dict/sinonims.txt"
 
@@ -176,6 +178,10 @@ class MoveRequest(BaseModel):
 class InsertOrMoveRequest(BaseModel):
     word: str  # paraula a inserir o moure
     to_pos: int  # posició destí (0 <= to_pos <= len)
+
+class AddNewWordRequest(BaseModel):
+    word: str
+    to_pos: int | None = None  # si None -> al final
 
 class GenerateRequest(BaseModel):
     word: str
@@ -423,6 +429,91 @@ def insert_or_move_word(filename: str, req: InsertOrMoveRequest, _: None = Depen
         "from": from_pos,
         "to": to_pos,
         "total": expected_len,
+    }
+
+@app.get("/api/lemma-info/{word}")
+def lemma_info(word: str, _: None = Depends(require_auth)):
+    """Retorna informació de lema / flexió per informar abans d'afegir.
+    is_inflection: True si la paraula és una flexió d'un lema diferent.
+    """
+    dicc = _get_diccionari()
+    w = word.strip().lower()
+    if not w:
+        raise HTTPException(status_code=400, detail="Paraula buida")
+    lema, es_flexio = dicc.obtenir_forma_canonica(w)
+    return {
+        "word": w,
+        "lemma": lema,
+        "is_inflection": bool(lema and es_flexio),
+        "is_known": bool(lema),
+    }
+
+def _append_new_word_log(entry: dict):
+    """Afegeix un registre a noves_paraules.json mantenint una llista."""
+    try:
+        if NEW_WORDS_PATH.exists():
+            with open(NEW_WORDS_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                data = []
+        else:
+            data = []
+        data.append(entry)
+        with open(NEW_WORDS_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[WARN] No s'ha pogut registrar nova paraula: {e}")
+
+@app.post("/api/rankings/{filename}/add-new")
+def add_new_word(filename: str, req: AddNewWordRequest, _: None = Depends(require_auth)):
+    """Afegeix una paraula nova (nom/verb en forma canònica) al rànquing si no existeix.
+    Valida i informa si sembla una flexió. Desa també registre a noves_paraules.json.
+    """
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat.")
+    word = req.word.strip().lower()
+    if not word:
+        raise HTTPException(status_code=400, detail="Paraula buida")
+    # Carrega ranking
+    with open(file_path, encoding="utf-8") as f:
+        data = json.load(f)
+    if word in data:
+        raise HTTPException(status_code=400, detail="La paraula ja existeix al rànquing")
+    # Lema
+    dicc = _get_diccionari()
+    lema, es_flexio = dicc.obtenir_forma_canonica(word)
+    is_inflection = bool(lema and es_flexio)
+    # Inserció: decideix posició
+    items = sorted(data.items(), key=lambda x: x[1])
+    total = len(items)
+    to_pos = req.to_pos
+    if to_pos is None:
+        to_pos = total  # al final
+    to_pos = max(0, min(to_pos, total))
+    items.insert(to_pos, (word, to_pos))
+    # Reindexa
+    new_data = {w: i for i, (w, _) in enumerate(items)}
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(new_data, f, ensure_ascii=False, indent=2)
+    # Log
+    _append_new_word_log({
+        "word": word,
+        "ranking_file": filename,
+        "inserted_pos": to_pos,
+        "total_after": len(new_data),
+        "lemma": lema,
+        "is_inflection": is_inflection,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    })
+    return {
+        "ok": True,
+        "action": "inserted",
+        "word": word,
+        "to": to_pos,
+        "total": len(new_data),
+        "lemma": lema,
+        "is_inflection": is_inflection,
     }
 
 @app.post("/api/generate")
