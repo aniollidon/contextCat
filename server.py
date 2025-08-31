@@ -48,7 +48,7 @@ app.add_middleware(
 
 # Carregar diccionari 
 DICCIONARI_PATH = os.getenv("DICCIONARI_PATH", "data/diccionari.json")
-DEFAULT_PARAULA_DIA = os.getenv("DEFAULT_PARAULA_DIA", "paraula")
+DEFAULT_REBUSCADA = os.getenv("DEFAULT_REBUSCADA", "paraula")
 
 dicc = Diccionari.load(DICCIONARI_PATH)
 
@@ -56,17 +56,17 @@ dicc = Diccionari.load(DICCIONARI_PATH)
 RANKING_DICCIONARI = {}
 FORMES_CANONIQUES = []
 TOTAL_PARAULES_RANKING = 0
-PARAULA_DIA = ""
+REBUSCADA = ""
 
-def carregar_ranking(paraula_dia: str):
+def carregar_ranking(rebuscada: str):
     """Carrega el rànquing per una paraula específica"""
     words_dir = Path("data/words")
-    fitxer_paraula = words_dir / f"{paraula_dia}.json"
+    fitxer_paraula = words_dir / f"{rebuscada}.json"
     
     if not fitxer_paraula.exists():
         raise HTTPException(
             status_code=404,
-            detail=f"No s'ha trobat el fitxer de rànquing per la paraula '{paraula_dia}'"
+            detail=f"No s'ha trobat el fitxer de rànquing per la paraula '{rebuscada}'"
         )
     
     try:
@@ -85,20 +85,20 @@ def carregar_ranking(paraula_dia: str):
             detail=f"Error carregant el fitxer de rànquing: {str(e)}"
         )
 
-def obtenir_ranking_actiu(paraula_dia_request: Optional[str] = None):
+def obtenir_ranking_actiu(rebuscada_request: Optional[str] = None):
     """Obté el rànquing actiu, sigui el global o el especificat"""
-    if paraula_dia_request:
-        return carregar_ranking(paraula_dia_request.lower())
+    if rebuscada_request:
+        return carregar_ranking(rebuscada_request.lower())
     else:
-        return RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, PARAULA_DIA
+        return RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, REBUSCADA
 
 # Carregar rànquing per defecte
-RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, PARAULA_DIA = carregar_ranking(DEFAULT_PARAULA_DIA)
-logger.info(f"SERVIDOR INICIAT: Paraula objectiu '{PARAULA_DIA}' ({TOTAL_PARAULES_RANKING} paraules)")
+RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, REBUSCADA = carregar_ranking(DEFAULT_REBUSCADA)
+logger.info(f"SERVIDOR INICIAT: Paraula objectiu '{REBUSCADA}' ({TOTAL_PARAULES_RANKING} paraules)")
 
 class GuessRequest(BaseModel):
     paraula: str
-    paraula_dia: Optional[str] = None  # Paraula del dia opcional
+    rebuscada: Optional[str] = None  # Paraula del dia opcional
 
 class GuessResponse(BaseModel):
     paraula: str
@@ -109,7 +109,7 @@ class GuessResponse(BaseModel):
 
 class PistaRequest(BaseModel):
     intents: List[Dict]
-    paraula_dia: Optional[str] = None  # Paraula del dia opcional
+    rebuscada: Optional[str] = None  # Paraula del dia opcional
 
 class PistaResponse(BaseModel):
     paraula: str
@@ -118,7 +118,7 @@ class PistaResponse(BaseModel):
     total_paraules: int
 
 class RendirseRequest(BaseModel):
-    paraula_dia: Optional[str] = None  # Paraula del dia opcional
+    rebuscada: Optional[str] = None  # Paraula del dia opcional
 
 class RendirseResponse(BaseModel):
     paraula_correcta: str
@@ -128,7 +128,7 @@ class RankingItem(BaseModel):
     posicio: int
 
 class RankingListResponse(BaseModel):
-    paraula_dia: str
+    rebuscada: str
     total_paraules: int
     objectiu: str
     ranking: List[RankingItem]
@@ -137,7 +137,7 @@ class RankingListResponse(BaseModel):
 @app.post("/guess", response_model=GuessResponse)
 async def guess(request: GuessRequest):
     # Obtenir rànquing actiu (global o especificat)
-    ranking_diccionari, formes_canoniques, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.paraula_dia)
+    ranking_diccionari, formes_canoniques, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada)
     
     paraula_introduida = Diccionari.normalitzar_paraula(request.paraula)
     forma_canonica, es_flexio = dicc.obtenir_forma_canonica(paraula_introduida)
@@ -186,7 +186,7 @@ async def guess(request: GuessRequest):
 @app.post("/pista", response_model=PistaResponse)
 async def donar_pista(request: PistaRequest):
     # Obtenir rànquing actiu (global o especificat)
-    ranking_diccionari, formes_canoniques, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.paraula_dia)
+    ranking_diccionari, formes_canoniques, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada)
     
     intents_actuals = request.intents
     paraules_provades = {intent['paraula'] for intent in intents_actuals}
@@ -291,20 +291,20 @@ async def donar_pista(request: PistaRequest):
 async def root():
     return {"message": "API del joc de paraules (refactoritzat)"}
 
-@app.get("/paraula/{paraula_dia}")
-async def canviar_paraula_dia(paraula_dia: str):
+@app.get("/paraula/{rebuscada}")
+async def canviar_rebuscada(rebuscada: str):
     """Canvia la paraula del dia i carrega el seu rànquing corresponent"""
-    global RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, PARAULA_DIA
+    global RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, REBUSCADA
     try:
-        RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, PARAULA_DIA = carregar_ranking(paraula_dia.lower())
-        logger.info(f"PARAULA DIA CANVIADA: '{PARAULA_DIA}' ({TOTAL_PARAULES_RANKING} paraules)")
+        RANKING_DICCIONARI, FORMES_CANONIQUES, TOTAL_PARAULES_RANKING, REBUSCADA = carregar_ranking(rebuscada.lower())
+        logger.info(f"PARAULA DIA CANVIADA: '{REBUSCADA}' ({TOTAL_PARAULES_RANKING} paraules)")
         return {
-            "message": f"Paraula del dia canviada a '{paraula_dia}'",
-            "paraula_dia": PARAULA_DIA,
+            "message": f"Paraula del dia canviada a '{rebuscada}'",
+            "rebuscada": REBUSCADA,
             "total_paraules": TOTAL_PARAULES_RANKING
         }
     except HTTPException as e:
-        logger.error(f"PARAULA DIA ERROR: No s'ha trobat '{paraula_dia}'")
+        logger.error(f"PARAULA DIA ERROR: No s'ha trobat '{rebuscada}'")
         raise e
     except Exception as e:
         logger.error(f"PARAULA DIA ERROR: {str(e)}")
@@ -317,24 +317,24 @@ async def canviar_paraula_dia(paraula_dia: str):
 async def info():
     """Retorna informació sobre la paraula del dia actual"""
     return {
-        "paraula_dia": PARAULA_DIA,
+        "rebuscada": REBUSCADA,
         "total_paraules": TOTAL_PARAULES_RANKING,
         "rànquing_carregat": len(RANKING_DICCIONARI) > 0
     }
 
 @app.get("/paraula-dia")
-async def get_paraula_dia():
+async def get_rebuscada():
     """Retorna la paraula del dia actual"""
-    return {"paraula": PARAULA_DIA}
+    return {"paraula": REBUSCADA}
 
 @app.post("/rendirse", response_model=RendirseResponse)
 async def rendirse(request: RendirseRequest):
     """Endpoint per rendir-se i obtenir la resposta correcta"""
-    global PARAULA_DIA
+    global REBUSCADA
     
     try:
         # Obtenir rànquing actiu (global o especificat)
-        ranking_diccionari, formes_canoniques, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.paraula_dia)
+        ranking_diccionari, formes_canoniques, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada)
         
         # Log de rendició
         logger.info(f"RENDICIÓ: Revelada paraula '{paraula_objectiu}'")
@@ -349,22 +349,22 @@ async def rendirse(request: RendirseRequest):
         )
 
 @app.get("/ranking", response_model=RankingListResponse)
-async def obtenir_ranking(limit: int = Query(300, ge=1, le=2000), paraula_dia: Optional[str] = None):
+async def obtenir_ranking(limit: int = Query(300, ge=1, le=2000), rebuscada: Optional[str] = None):
     """Retorna les primeres 'limit' paraules del rànquing per la paraula del dia actual o l'especificada.
 
     Parameters
     ----------
     limit: int
         Nombre màxim de paraules a retornar (per defecte 300, màxim 2000)
-    paraula_dia: Optional[str]
+    rebuscada: Optional[str]
         Paraula del dia per la qual es vol obtenir el rànquing (opcional)
     """
     try:
-        ranking_diccionari, _formes, total_paraules, paraula_objectiu = obtenir_ranking_actiu(paraula_dia)
+        ranking_diccionari, _formes, total_paraules, paraula_objectiu = obtenir_ranking_actiu(rebuscada)
         # Ordenar per posició (valor més petit = més proper)
         ordenat = sorted(ranking_diccionari.items(), key=lambda kv: kv[1])[:limit]
         return RankingListResponse(
-            paraula_dia=paraula_dia.lower() if paraula_dia else PARAULA_DIA,
+            rebuscada=rebuscada.lower() if rebuscada else REBUSCADA,
             total_paraules=total_paraules,
             objectiu=paraula_objectiu,
             ranking=[RankingItem(paraula=p, posicio=pos) for p, pos in ordenat]
