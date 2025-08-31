@@ -142,6 +142,21 @@ async def guess(request: GuessRequest):
     paraula_introduida = Diccionari.normalitzar_paraula(request.paraula)
     forma_canonica, es_flexio = dicc.obtenir_forma_canonica(paraula_introduida)
     if forma_canonica is None:
+        # Millora: si la paraula no és al diccionari però sí apareix literalment al rànquing, accepta-la.
+        rank_directe = ranking_diccionari.get(paraula_introduida)
+        if rank_directe is not None:
+            es_correcta_directe = paraula_introduida == paraula_objectiu
+            logger.info(
+                f"GUESS: '{paraula_introduida}' (fora diccionari però trobat al rànquing) -> "
+                f"{'CORRECTA!' if es_correcta_directe else f'#'+str(rank_directe)} (objectiu: {paraula_objectiu})"
+            )
+            return GuessResponse(
+                paraula=paraula_introduida,
+                forma_canonica=None,
+                posicio=rank_directe,
+                total_paraules=total_paraules,
+                es_correcta=es_correcta_directe
+            )
         logger.info(f"GUESS: '{paraula_introduida}' -> INVÀLIDA (objectiu: {paraula_objectiu})")
         raise HTTPException(
             status_code=400,
