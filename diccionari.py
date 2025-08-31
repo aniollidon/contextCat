@@ -196,16 +196,19 @@ class Diccionari:
 
     def obtenir_forma_canonica(self, paraula: str) -> Tuple[Optional[str], bool]:
         paraula_norm = self.normalitzar_paraula(paraula)
+        # Si tenim múltiples lemes, prioritzar el que coincideix exactament amb la forma
+        if paraula_norm in self.mapping_flexions_multi:
+            lemes = self.mapping_flexions_multi[paraula_norm]
+            if paraula_norm in lemes:
+                forma_canonica = paraula_norm
+            else:
+                # Manté compatibilitat amb mapping_flexions, si existeix; si no, primer lema arbitrari
+                forma_canonica = self.mapping_flexions.get(paraula_norm) or next(iter(lemes))
+            es_flexio = paraula_norm != forma_canonica
+            return forma_canonica, es_flexio
+        # Fallback antic
         if paraula_norm not in self.mapping_flexions:
             return None, False
         forma_canonica = self.mapping_flexions[paraula_norm]
         es_flexio = paraula_norm != forma_canonica
         return forma_canonica, es_flexio
-
-    def obtenir_formes_canonique_multiple(self, paraula: str) -> Tuple[Set[str], bool]:
-        paraula_norm = self.normalitzar_paraula(paraula)
-        if paraula_norm not in self.mapping_flexions_multi:
-            return set(), False
-        lemes = self.mapping_flexions_multi[paraula_norm]
-        es_flexio = any(paraula_norm != l for l in lemes)
-        return lemes, es_flexio
