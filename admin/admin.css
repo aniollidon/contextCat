@@ -313,17 +313,16 @@
 }
 
 .comment-icon-btn .plus-sign {
-  font-size: 10px;
+  font-size: 14px;
   font-weight: bold;
   position: absolute;
-  top: -2px;
-  right: -4px;
+  top: 2px;
+  right: 11px;
 }
 
 /* Indicador de comentari de paraula */
 .word-comment-indicator {
   margin-left: 4px;
-  margin-right: 4px;
   display: inline-flex;
   align-items: center;
 }

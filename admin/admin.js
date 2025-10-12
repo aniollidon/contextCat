@@ -1030,7 +1030,7 @@ function updateGlobalCommentIcon() {
 
   const hasComment = comments.global && comments.global.trim() !== "";
   icon.innerHTML = hasComment
-    ? '<i class="bi bi-chat-fill" style="color:#dc3545;"></i>'
+    ? '<i class="bi bi-chat-left-text-fill" style="color:#818181;"></i>'
     : '<i class="bi bi-chat-left"><span class="plus-sign">+</span></i>';
 
   icon.onclick = (e) => {
@@ -1293,21 +1293,22 @@ function renderWordsArea() {
     txt.style.color = colorPerPos(pos);
     item.appendChild(txt);
 
-    // Afegeix indicador de comentari si la paraula té comentari
-    const hasWordComment = comments.words && comments.words[w.word];
-    if (hasWordComment) {
-      const commentIndicator = document.createElement("span");
-      commentIndicator.className = "word-comment-indicator";
-      commentIndicator.innerHTML =
-        '<i class="bi bi-chat-fill" style="color:#dc3545; font-size:10px;"></i>';
-      commentIndicator.title = "Aquesta paraula té comentari";
-      item.appendChild(commentIndicator);
-    }
-
     if (!isFirst) {
       const menuBtn = document.createElement("button");
       menuBtn.className = "icon-btn";
-      menuBtn.innerHTML = '<i class="bi bi-three-dots-vertical"></i>';
+
+      // Afegeix indicador de comentari si la paraula té comentari
+      const hasWordComment = comments.words && comments.words[w.word];
+      let menuBtnHtml = "";
+
+      if (hasWordComment) {
+        menuBtnHtml =
+          '<span class="word-comment-indicator" title="Aquesta paraula té comentari"><i class="bi bi-chat-left-text-fill" style="color: #818181;font-size:10px;"></i></span> ';
+      }
+
+      menuBtnHtml += '<i class="bi bi-three-dots-vertical"></i>';
+      menuBtn.innerHTML = menuBtnHtml;
+
       menuBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
