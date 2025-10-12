@@ -29,8 +29,8 @@
   background-color: #42a5f5;
   outline-offset: 1px;
 }
-.form-check-input:checked{
-  border-color:#cfcfcf;
+.form-check-input:checked {
+  border-color: #cfcfcf;
 }
 
 .form-check-input:checked {
@@ -41,21 +41,21 @@
   background-color: #42a5f5;
 }
 
-.form-check-input:focus{
+.form-check-input:focus {
   border-color: #74c978;
-      box-shadow: 0 0 0 .25rem #74c9783c;
+  box-shadow: 0 0 0 0.25rem #74c9783c;
 }
 
-.validate-chk.validated-approved:focus{
+.validate-chk.validated-approved:focus {
   border-color: #42a5f5;
-      box-shadow: 0 0 0 .25rem #42a5f53c;
+  box-shadow: 0 0 0 0.25rem #42a5f53c;
 }
 
 /* Personalització lleugera per sobre de Bootstrap */
 .paper {
   background: #f8fafc;
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   padding: 20px;
   margin-bottom: 24px;
 }
@@ -72,7 +72,7 @@
   align-items: center;
   background: #fff;
   border-radius: 8px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
   padding: 10px 14px;
   cursor: pointer;
   border: 2px solid transparent;
@@ -105,15 +105,15 @@
   font-size: 1.2em;
 }
 .word-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    overflow-x: auto;
-    padding: 8px 0;
-    flex-wrap: wrap;
-    height: 70vh;
-    justify-content: flex-start;
-    align-content: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 8px 0;
+  flex-wrap: wrap;
+  height: 70vh;
+  justify-content: flex-start;
+  align-content: flex-start;
 }
 .word-col {
   display: flex;
@@ -129,7 +129,7 @@
   padding: 4px 0px 4px 10px;
   min-width: 120px;
   font-size: 14px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
   border: 1px solid #e9ecef;
   transition: box-shadow 0.15s, background 0.15s, opacity 0.15s;
 }
@@ -138,7 +138,7 @@
 }
 .word-item.dragging {
   opacity: 0.7;
-  box-shadow: 0 4px 16px rgba(33,37,41,0.18);
+  box-shadow: 0 4px 16px rgba(33, 37, 41, 0.18);
   background: #e3f2fd;
   z-index: 10;
 }
@@ -160,7 +160,7 @@
   background: #fff;
   border: 1px solid #dee2e6;
   border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   z-index: 1000;
   min-width: 140px;
 }
@@ -174,8 +174,11 @@
 }
 .dialog-backdrop {
   position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.18);
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.18);
   z-index: 2000;
   display: flex;
   align-items: center;
@@ -186,13 +189,20 @@
   border-radius: 10px;
   padding: 28px;
   min-width: 340px;
-  box-shadow: 0 2px 16px rgba(0,0,0,0.13);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.13);
 }
 
 /* Test overlay selection */
-.test-body.select-mode .test-row { cursor: pointer; }
-.test-body .test-row.selected { background: #ffe9b3; border-radius:4px; }
-.test-body .test-row { padding:2px 4px; }
+.test-body.select-mode .test-row {
+  cursor: pointer;
+}
+.test-body .test-row.selected {
+  background: #ffe9b3;
+  border-radius: 4px;
+}
+.test-body .test-row {
+  padding: 2px 4px;
+}
 
 /* Configuració general */
 #settings-btn {
@@ -259,7 +269,7 @@
   cursor: grabbing;
 }
 
-.jump{
+.jump {
   margin-left: 3px;
 }
 
@@ -293,3 +303,49 @@
   color: white;
   border-color: #0d6efd;
 }
+
+/* ==================== ESTILS DE COMENTARIS ==================== */
+
+/* Icona de comentari global */
+.comment-icon-btn {
+  margin-left: 8px;
+  position: relative;
+}
+
+.comment-icon-btn .plus-sign {
+  font-size: 10px;
+  font-weight: bold;
+  position: absolute;
+  top: -2px;
+  right: -4px;
+}
+
+/* Indicador de comentari de paraula */
+.word-comment-indicator {
+  margin-left: 4px;
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Modal de comentaris */
+#commentModal .modal-body {
+  padding: 20px;
+}
+
+#commentModal textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+#commentModal .btn-danger {
+  background-color: #dc3545;
+  border-color: #dc3545;
+}
+
+#commentModal .btn-danger:hover {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
+
+/* ==================== FI ESTILS DE COMENTARIS ==================== */

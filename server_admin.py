@@ -15,6 +15,9 @@ load_dotenv()
 WORDS_DIR = Path(__file__).parent / "data" / "words"
 WORDS_DIR.mkdir(parents=True, exist_ok=True)
 
+COMMENTS_DIR = Path(__file__).parent / "data" / "words" / "comments"
+COMMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
 VALIDATIONS_PATH = Path(__file__).parent / "data" / "validacions.json"
 FAVORITES_PATH = Path(__file__).parent / "data" / "preferits.json"
 DIFFICULTIES_PATH = Path(__file__).parent / "data" / "dificultats.json"
@@ -76,6 +79,42 @@ def _save_difficulties(data: dict):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         raise HTTPException(status_code=500, detail="No s'ha pogut desar dificultats")
+
+def _get_comment_path(filename: str) -> Path:
+    """Obté el path del fitxer de comentaris per una paraula rebuscada."""
+    base_name = filename.replace('.json', '')
+    return COMMENTS_DIR / f"{base_name}.comm.json"
+
+def _load_comments(filename: str) -> dict:
+    """Carrega els comentaris d'un fitxer de rànquing."""
+    comment_path = _get_comment_path(filename)
+    if comment_path.exists():
+        try:
+            with open(comment_path, encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except Exception:
+            pass
+    return {"global": "", "words": {}}
+
+def _save_comments(filename: str, data: dict):
+    """Desa els comentaris d'un fitxer de rànquing."""
+    comment_path = _get_comment_path(filename)
+    try:
+        with open(comment_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        raise HTTPException(status_code=500, detail="No s'ha pogut desar els comentaris")
+
+def _delete_comments_file(filename: str):
+    """Esborra el fitxer de comentaris si existeix."""
+    comment_path = _get_comment_path(filename)
+    if comment_path.exists():
+        try:
+            comment_path.unlink()
+        except Exception:
+            raise HTTPException(status_code=500, detail="No s'ha pogut esborrar el fitxer de comentaris")
 
 def _download_synonyms():
     """Descarrega el fitxer de sinònims si no existeix."""
@@ -199,6 +238,13 @@ class AddTestWordsRequest(BaseModel):
 
 class DeleteTestWordsRequest(BaseModel):
     words: list[str]
+
+class CommentUpdate(BaseModel):
+    comment: str  # El text del comentari
+
+class WordCommentUpdate(BaseModel):
+    word: str
+    comment: str  # El text del comentari (buida per esborrar)
 
 def require_auth(request: Request):
     if not ADMIN_PASSWORD:
@@ -822,6 +868,106 @@ def delete_word(filename: str, pos: int, _: None = Depends(require_auth)):
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(new_data, f, ensure_ascii=False, indent=2)
     return {"ok": True, "deleted": deleted_word, "pos": pos, "total": len(items)}
+
+# ==================== ENDPOINTS DE COMENTARIS ====================
+
+@app.get("/api/rankings/{filename}/comments")
+def get_comments(filename: str, _: None = Depends(require_auth)):
+    """Obté tots els comentaris d'un fitxer de rànquing (global i per paraula)."""
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat")
+    return _load_comments(filename)
+
+@app.post("/api/rankings/{filename}/comments/global")
+def set_global_comment(filename: str, upd: CommentUpdate, _: None = Depends(require_auth)):
+    """Actualitza el comentari global del fitxer."""
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat")
+    
+    comments = _load_comments(filename)
+    comments["global"] = upd.comment.strip()
+    
+    # Si no hi ha comentaris (global buit i cap paraula), esborra el fitxer
+    if not comments["global"] and not comments.get("words", {}):
+        _delete_comments_file(filename)
+    else:
+        _save_comments(filename, comments)
+    
+    return {"ok": True, "comment": comments["global"]}
+
+@app.delete("/api/rankings/{filename}/comments/global")
+def delete_global_comment(filename: str, _: None = Depends(require_auth)):
+    """Esborra el comentari global del fitxer."""
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat")
+    
+    comments = _load_comments(filename)
+    comments["global"] = ""
+    
+    # Si no hi ha comentaris (global buit i cap paraula), esborra el fitxer
+    if not comments.get("words", {}):
+        _delete_comments_file(filename)
+    else:
+        _save_comments(filename, comments)
+    
+    return {"ok": True}
+
+@app.post("/api/rankings/{filename}/comments/word")
+def set_word_comment(filename: str, upd: WordCommentUpdate, _: None = Depends(require_auth)):
+    """Actualitza el comentari d'una paraula específica."""
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat")
+    
+    word = upd.word.strip().lower()
+    if not word:
+        raise HTTPException(status_code=400, detail="Paraula buida")
+    
+    comments = _load_comments(filename)
+    if "words" not in comments:
+        comments["words"] = {}
+    
+    comment_text = upd.comment.strip()
+    if comment_text:
+        comments["words"][word] = comment_text
+    else:
+        # Si el comentari és buit, l'esborrem
+        if word in comments["words"]:
+            del comments["words"][word]
+    
+    # Si no hi ha comentaris (global buit i cap paraula), esborra el fitxer
+    if not comments.get("global", "") and not comments["words"]:
+        _delete_comments_file(filename)
+    else:
+        _save_comments(filename, comments)
+    
+    return {"ok": True, "word": word, "comment": comment_text}
+
+@app.delete("/api/rankings/{filename}/comments/word/{word}")
+def delete_word_comment(filename: str, word: str, _: None = Depends(require_auth)):
+    """Esborra el comentari d'una paraula específica."""
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat")
+    
+    word = word.strip().lower()
+    comments = _load_comments(filename)
+    
+    if "words" in comments and word in comments["words"]:
+        del comments["words"][word]
+    
+    # Si no hi ha comentaris (global buit i cap paraula), esborra el fitxer
+    if not comments.get("global", "") and not comments["words"]:
+        _delete_comments_file(filename)
+    else:
+        _save_comments(filename, comments)
+    
+    return {"ok": True}
+
+# ==================== FI ENDPOINTS DE COMENTARIS ====================
 
 if __name__ == "__main__":
     import sys

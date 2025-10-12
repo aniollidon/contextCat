@@ -63,6 +63,7 @@ let lastMoveInfo = null; // {word, toPos}
 let validations = {}; // filename -> 'validated' | 'approved' (empty means not validated)
 let favorites = {}; // filename -> true
 let difficulties = {}; // filename -> 'facil'|'mitja'|'dificil'
+let comments = {}; // Estat dels comentaris del fitxer actual {global: "", words: {}}
 let showOnlyPending = false; // filtre de fitxers no validats
 let showOnlyFavorites = false; // filtre de fitxers preferits
 let autoSaveTimer = null; // temporitzador per auto-desat
@@ -986,6 +987,209 @@ function renderFileList() {
   });
 }
 
+// ==================== FUNCIONS DE COMENTARIS ====================
+
+// Carrega els comentaris d'un fitxer
+async function loadComments(filename) {
+  try {
+    const res = await fetch(`${RANKINGS_API}/${filename}/comments`, {
+      headers: { ...authHeaders() },
+    });
+    if (!res.ok) throw new Error();
+    comments = await res.json();
+  } catch (e) {
+    comments = { global: "", words: {} };
+  }
+  updateCommentIndicators();
+}
+
+// Actualitza els indicadors de comentaris a la UI
+function updateCommentIndicators() {
+  updateGlobalCommentIcon();
+  renderWordsArea(); // Re-renderitza per mostrar indicadors de paraules
+}
+
+// Actualitza la icona de comentari global
+function updateGlobalCommentIcon() {
+  const selector = document.getElementById("difficulty-selector");
+  if (!selector) return;
+
+  // Elimina icona existent si n'hi ha
+  let icon = document.getElementById("global-comment-icon");
+  if (icon) icon.remove();
+
+  if (!selected) return;
+
+  // Crea la icona
+  icon = document.createElement("button");
+  icon.id = "global-comment-icon";
+  icon.className = "icon-btn comment-icon-btn";
+  icon.title = comments.global
+    ? "Comentari global (clic per editar)"
+    : "Afegir comentari global";
+
+  const hasComment = comments.global && comments.global.trim() !== "";
+  icon.innerHTML = hasComment
+    ? '<i class="bi bi-chat-fill" style="color:#dc3545;"></i>'
+    : '<i class="bi bi-chat-left"><span class="plus-sign">+</span></i>';
+
+  icon.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openCommentModal("global", null);
+  };
+
+  // Insereix després del selector
+  selector.parentNode.insertBefore(icon, selector.nextSibling);
+}
+
+// Obre el modal de comentaris
+function openCommentModal(type, word = null) {
+  const isGlobal = type === "global";
+  const currentComment = isGlobal
+    ? comments.global
+    : (comments.words && comments.words[word]) || "";
+  const title = isGlobal ? "Comentari Global del Fitxer" : `Comentari: ${word}`;
+
+  const modalHtml = `
+    <div class="modal fade" id="commentModal" tabindex="-1" aria-labelledby="commentModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="commentModalLabel">${title}</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tanca"></button>
+          </div>
+          <div class="modal-body">
+            <textarea class="form-control" id="comment-textarea" rows="5" placeholder="Escriu el comentari aquí...">${currentComment}</textarea>
+          </div>
+          <div class="modal-footer">
+            ${
+              currentComment
+                ? '<button type="button" class="btn btn-danger me-auto" id="delete-comment-btn">Esborra</button>'
+                : ""
+            }
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel·la</button>
+            <button type="button" class="btn btn-primary" id="save-comment-btn">Desa</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Elimina modal anterior si existeix
+  const oldModal = document.getElementById("commentModal");
+  if (oldModal) oldModal.remove();
+
+  // Afegeix modal al DOM
+  document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+  const modalEl = document.getElementById("commentModal");
+  const modal = new bootstrap.Modal(modalEl);
+
+  // Event per desar
+  document.getElementById("save-comment-btn").onclick = async () => {
+    const textarea = document.getElementById("comment-textarea");
+    const newComment = textarea.value.trim();
+    await saveComment(isGlobal, word, newComment);
+    modal.hide();
+  };
+
+  // Event per esborrar (si hi ha comentari)
+  const deleteBtn = document.getElementById("delete-comment-btn");
+  if (deleteBtn) {
+    deleteBtn.onclick = async () => {
+      if (!confirm("Segur que vols esborrar aquest comentari?")) return;
+      await deleteComment(isGlobal, word);
+      modal.hide();
+    };
+  }
+
+  // Neteja el modal del DOM quan es tanca
+  modalEl.addEventListener("hidden.bs.modal", () => {
+    modalEl.remove();
+  });
+
+  modal.show();
+}
+
+// Desa un comentari (global o de paraula)
+async function saveComment(isGlobal, word, comment) {
+  if (!selected) return;
+
+  try {
+    let endpoint, body;
+    if (isGlobal) {
+      endpoint = `${RANKINGS_API}/${selected}/comments/global`;
+      body = { comment };
+    } else {
+      endpoint = `${RANKINGS_API}/${selected}/comments/word`;
+      body = { word, comment };
+    }
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) throw new Error();
+
+    // Actualitza l'estat local
+    if (isGlobal) {
+      comments.global = comment;
+    } else {
+      if (!comments.words) comments.words = {};
+      if (comment) {
+        comments.words[word] = comment;
+      } else {
+        delete comments.words[word];
+      }
+    }
+
+    updateCommentIndicators();
+  } catch (e) {
+    alert("Error desant el comentari");
+  }
+}
+
+// Esborra un comentari (global o de paraula)
+async function deleteComment(isGlobal, word) {
+  if (!selected) return;
+
+  try {
+    let endpoint;
+    if (isGlobal) {
+      endpoint = `${RANKINGS_API}/${selected}/comments/global`;
+    } else {
+      endpoint = `${RANKINGS_API}/${selected}/comments/word/${encodeURIComponent(
+        word
+      )}`;
+    }
+
+    const res = await fetch(endpoint, {
+      method: "DELETE",
+      headers: { ...authHeaders() },
+    });
+
+    if (!res.ok) throw new Error();
+
+    // Actualitza l'estat local
+    if (isGlobal) {
+      comments.global = "";
+    } else {
+      if (comments.words) {
+        delete comments.words[word];
+      }
+    }
+
+    updateCommentIndicators();
+  } catch (e) {
+    alert("Error esborrant el comentari");
+  }
+}
+
+// ==================== FI FUNCIONS DE COMENTARIS ====================
+
 function loadFile(filename) {
   selected = filename;
   wordsByPos = {};
@@ -996,6 +1200,7 @@ function loadFile(filename) {
   renderWordsArea();
   updateWordsTitle(); // Actualitza títol en carregar fitxer
   updateDifficultySelector(); // Actualitza selector de dificultat
+  loadComments(filename); // Carrega comentaris del fitxer
   fetch(`${RANKINGS_API}/${filename}?offset=0&limit=${PAGE_SIZE}`, {
     headers: { ...authHeaders() },
   })
@@ -1087,6 +1292,18 @@ function renderWordsArea() {
     txt.title = `${pos}. ${w.word}`;
     txt.style.color = colorPerPos(pos);
     item.appendChild(txt);
+
+    // Afegeix indicador de comentari si la paraula té comentari
+    const hasWordComment = comments.words && comments.words[w.word];
+    if (hasWordComment) {
+      const commentIndicator = document.createElement("span");
+      commentIndicator.className = "word-comment-indicator";
+      commentIndicator.innerHTML =
+        '<i class="bi bi-chat-fill" style="color:#dc3545; font-size:10px;"></i>';
+      commentIndicator.title = "Aquesta paraula té comentari";
+      item.appendChild(commentIndicator);
+    }
+
     if (!isFirst) {
       const menuBtn = document.createElement("button");
       menuBtn.className = "icon-btn";
@@ -1328,7 +1545,13 @@ function showMenu(e, pos) {
   menu.style.top = menuAnchor.y + "px";
   // Construïm menú amb opcions bàsiques + moviments ràpids
   const quickTargets = [300, 1500, 3000];
+  const w = wordsByPos[pos];
+  const hasComment = w && comments.words && comments.words[w.word];
+
   let html = `
+    <div class="menu-item" id="comment-word">${
+      hasComment ? "Editar comentari" : "Afegir comentari"
+    }</div>
     <div class="menu-item" id="move-to">Mou a posició…</div>
     <div class="menu-item" id="move-end">Mou al final</div>
   `;
@@ -1341,6 +1564,19 @@ function showMenu(e, pos) {
   html += `<div class="menu-item" id="delete-word" style="color:#c62828;">Elimina paraula…</div>`;
   menu.innerHTML = html;
   menuRoot.appendChild(menu);
+
+  document.getElementById("comment-word").onclick = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (menuIdx != null) {
+      const wObj = wordsByPos[menuIdx];
+      if (wObj && wObj.word) {
+        openCommentModal("word", wObj.word);
+      }
+    }
+    closeMenu();
+  };
+
   document.getElementById("move-to").onclick = (ev) => {
     ev.preventDefault();
     ev.stopPropagation();
