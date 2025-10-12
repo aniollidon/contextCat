@@ -1551,7 +1551,7 @@ function showMenu(e, pos) {
 
   let html = `
     <div class="menu-item" id="comment-word">${
-      hasComment ? "Editar comentari" : "Afegir comentari"
+      hasComment ? "Comentar-ho amb el company" : "Afegir comentari"
     }</div>
     <div class="menu-item" id="move-to">Mou a posició…</div>
     <div class="menu-item" id="move-end">Mou al final</div>
