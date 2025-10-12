@@ -1,6 +1,6 @@
 // Configuració
 const PORT = 3000; // Port on corre el backend admin (uvicorn)
-const SERVER = `http://localhost:${PORT}`;
+const SERVER = `http://5.250.190.223:${PORT}`;
 // Bases d'API
 const API_BASE = `${SERVER}/api`;
 const RANKINGS_API = `${API_BASE}/rankings`;
@@ -64,6 +64,7 @@ let validations = {}; // filename -> 'validated' | 'approved' (empty means not v
 let favorites = {}; // filename -> true
 let difficulties = {}; // filename -> 'facil'|'mitja'|'dificil'
 let comments = {}; // Estat dels comentaris del fitxer actual {global: "", words: {}}
+let customSynonymsData = null; // Dades de test de sinònims personalitzat (temporal)
 let showOnlyPending = false; // filtre de fitxers no validats
 let showOnlyFavorites = false; // filtre de fitxers preferits
 let autoSaveTimer = null; // temporitzador per auto-desat
@@ -420,38 +421,10 @@ async function addSynonymsTestPrompt() {
       return;
     }
 
-    // Extreu tots els sinònims trobats
-    const synonyms = [];
-    data.groups.forEach((group) => {
-      group.words.forEach((w) => {
-        if (w.word) {
-          synonyms.push(w.word);
-        }
-      });
-    });
+    // Guarda les dades de sinònims personalitzats
+    customSynonymsData = data;
 
-    if (synonyms.length === 0) {
-      alert(`No s'han trobat sinònims per "${wordTrimmed}"`);
-      return;
-    }
-
-    // Afegeix els sinònims al test
-    const addRes = await fetch(`${API_BASE}/test-words`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
-      body: JSON.stringify({ words: synonyms }),
-    });
-
-    if (!addRes.ok) {
-      const err = await addRes.json().catch(() => ({ detail: "Error" }));
-      alert(err.detail || "Error afegint sinònims");
-      return;
-    }
-
-    const addData = await addRes.json();
-    alert(
-      `Trobats ${synonyms.length} sinònims de "${wordTrimmed}".\nAfegits ${addData.added.length} nous al test (total: ${addData.total})`
-    );
+    // Refresca la vista del test per mostrar la nova pestanya
     refreshTestOverlayIfVisible();
   } catch (e) {
     alert("Error de xarxa");
@@ -471,6 +444,7 @@ async function toggleTestOverlay() {
 
 function hideTestOverlay() {
   testVisible = false;
+  customSynonymsData = null; // Neteja dades de sinònims personalitzats
   const overlay = document.getElementById("test-overlay");
   if (overlay) {
     overlay.style.display = "none";
@@ -526,6 +500,10 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
   const hasAiTest = aiData && aiData.words && aiData.words.length > 0;
   const hasSynonymsTest =
     synonymsData && synonymsData.groups && synonymsData.groups.length > 0;
+  const hasCustomSynonyms =
+    customSynonymsData &&
+    customSynonymsData.groups &&
+    customSynonymsData.groups.length > 0;
 
   let tabsHtml = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -543,10 +521,19 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
             ? `<button class="btn btn-outline-primary" id="tab-synonyms" onclick="switchTestTab('synonyms')">SC sinònims (${synonymsData.count})</button>`
             : ""
         }
+        ${
+          hasCustomSynonyms
+            ? `<button class="btn btn-outline-primary" id="tab-custom" onclick="switchTestTab('custom')">Sin: ${customSynonymsData.base_word} (${customSynonymsData.count}) <span id="close-custom-test" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
+            : `<button class="btn btn-outline-info" id="add-synonyms-test" title="Crear test de sinònims d'una paraula">+Sin</button>`
+        }
       </div>
       <div class="btn-group btn-group-sm" role="group">
+        ${
+          hasCustomSynonyms
+            ? `<button class="btn btn-outline-info btn-sm" id="modify-synonyms-test" title="Canviar paraula del test de sinònims">↻Sin</button>`
+            : ""
+        }
         <button class="btn btn-outline-success" id="add-test-inside" title="Afegeix paraules al test comú">+Add</button>
-        <button class="btn btn-outline-info" id="add-synonyms-test" title="Afegeix test de sinònims d'una paraula">+Sin</button>
         <button class="btn btn-outline-secondary" id="toggle-test-select" title="Mode selecció">Sel</button>
         <button class="btn btn-outline-danger" id="delete-selected-test" style="display:none;" title="Elimina seleccionades">Del</button>
         <button class="btn btn-outline-secondary" id="close-test" title="Tanca">✕</button>
@@ -626,6 +613,40 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     }
   }
 
+  // Genera contingut de sinònims personalitzats
+  let customSynonymsRows = "";
+  if (hasCustomSynonyms) {
+    customSynonymsRows = customSynonymsData.groups
+      .map((group) => {
+        const groupWords = group.words
+          .map((w) => {
+            if (w.found) {
+              return `<div class="test-row-synonyms" data-word="${
+                w.word
+              }" draggable="true" style="cursor: grab;"><span style="color:${colorPerPos(
+                w.pos
+              )}">${w.word}</span> <a href="#" data-pos="${
+                w.pos
+              }" class="jump" title="Ves a posició"> (${w.pos})</a></div>`;
+            }
+            return `<div class="test-row-synonyms"><span class="text-muted">${w.word}</span> <span class="jump" style="font-size:11px">(no)</span></div>`;
+          })
+          .join("");
+
+        return `
+          <div class="synonym-group" style="margin-bottom: 12px;">
+            <div class="synonym-group-header" style="font-size: 11px; color: #666; margin-bottom: 4px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${group.original_line}">
+              ${group.original_line}
+            </div>
+            <div style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">
+              ${groupWords}
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
   overlay.innerHTML = `
     ${tabsHtml}
     <div id="test-common-content" class="test-tab-content" style="display:block;">
@@ -647,6 +668,14 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     </div>`
         : ""
     }
+    ${
+      hasCustomSynonyms
+        ? `
+    <div id="test-custom-content" class="test-tab-content" style="display:none;">
+      <div class="test-body-custom" id="test-body-custom" style="font-size:13px;">${customSynonymsRows}</div>
+    </div>`
+        : ""
+    }
   `;
 
   // Assigna events
@@ -658,6 +687,18 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
 
   const addSynonymsBtn = document.getElementById("add-synonyms-test");
   if (addSynonymsBtn) addSynonymsBtn.onclick = addSynonymsTestPrompt;
+
+  const modifySynonymsBtn = document.getElementById("modify-synonyms-test");
+  if (modifySynonymsBtn) modifySynonymsBtn.onclick = addSynonymsTestPrompt;
+
+  const closeCustomBtn = document.getElementById("close-custom-test");
+  if (closeCustomBtn) {
+    closeCustomBtn.onclick = (e) => {
+      e.stopPropagation(); // Evita que es canviï a la pestanya custom
+      customSynonymsData = null;
+      refreshTestOverlayIfVisible();
+    };
+  }
 
   initTestWordSelection();
 
@@ -704,6 +745,7 @@ window.switchTestTab = function (tabName) {
       if (id === "tab-common") currentTab = "common";
       else if (id === "tab-ai") currentTab = "ai";
       else if (id === "tab-synonyms") currentTab = "synonyms";
+      else if (id === "tab-custom") currentTab = "custom";
     }
     testState.scrollPositions[currentTab] = overlay.scrollTop || 0;
   }
@@ -732,14 +774,11 @@ window.switchTestTab = function (tabName) {
 
   // Actualitza botons d'acció (només per test comú)
   const addBtn = document.getElementById("add-test-inside");
-  const addSynBtn = document.getElementById("add-synonyms-test");
   const selectBtn = document.getElementById("toggle-test-select");
   const deleteBtn = document.getElementById("delete-selected-test");
 
   const isCommonTab = tabName === "common";
   if (addBtn) addBtn.style.display = isCommonTab ? "inline-block" : "none";
-  if (addSynBtn)
-    addSynBtn.style.display = isCommonTab ? "inline-block" : "none";
   if (selectBtn)
     selectBtn.style.display = isCommonTab ? "inline-block" : "none";
   if (deleteBtn && tabName !== "common") deleteBtn.style.display = "none";
@@ -1340,6 +1379,7 @@ function loadFile(filename) {
   dirty = false;
   loading = true;
   lastMoveInfo = null;
+  customSynonymsData = null; // Neteja dades de sinònims personalitzats quan canvia de fitxer
   renderFileList();
   renderWordsArea();
   updateWordsTitle(); // Actualitza títol en carregar fitxer
