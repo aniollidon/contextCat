@@ -1020,16 +1020,29 @@ function updateGlobalCommentIcon() {
 
   if (!selected) return;
 
+  // Comprova si hi ha qualsevol comentari (global o de paraules)
+  const hasGlobalComment = comments.global && comments.global.trim() !== "";
+  const hasWordComments =
+    comments.words && Object.keys(comments.words).length > 0;
+  const hasAnyComment = hasGlobalComment || hasWordComments;
+
   // Crea la icona
   icon = document.createElement("button");
   icon.id = "global-comment-icon";
   icon.className = "icon-btn comment-icon-btn";
-  icon.title = comments.global
-    ? "Comentari global (clic per editar)"
-    : "Afegir comentari global";
 
-  const hasComment = comments.global && comments.global.trim() !== "";
-  icon.innerHTML = hasComment
+  // Actualitza el títol segons el tipus de comentaris
+  if (hasGlobalComment && hasWordComments) {
+    icon.title = "Comentari global i comentaris de paraules (clic per veure)";
+  } else if (hasGlobalComment) {
+    icon.title = "Comentari global (clic per editar)";
+  } else if (hasWordComments) {
+    icon.title = "Comentaris de paraules (clic per veure)";
+  } else {
+    icon.title = "Afegir comentari global";
+  }
+
+  icon.innerHTML = hasAnyComment
     ? '<i class="bi bi-chat-left-text-fill" style="color:#ff6800;"></i>'
     : '<i class="bi bi-chat-left"><span class="plus-sign">+</span></i>';
 
@@ -1051,6 +1064,46 @@ function openCommentModal(type, word = null) {
     : (comments.words && comments.words[word]) || "";
   const title = isGlobal ? "Comentari Global del Fitxer" : `Comentari: ${word}`;
 
+  // Genera el resum de comentaris de paraules (només per al modal global)
+  let wordCommentsSection = "";
+  if (isGlobal && comments.words && Object.keys(comments.words).length > 0) {
+    const wordCommentsHtml = Object.entries(comments.words)
+      .map(([wordKey, commentText]) => {
+        // Troba la posició de la paraula en wordsByPos
+        let pos = null;
+        for (const [p, w] of Object.entries(wordsByPos)) {
+          if (w.word === wordKey) {
+            pos = parseInt(p);
+            break;
+          }
+        }
+
+        const color = pos !== null ? colorPerPos(pos) : "#999";
+        const posLabel = pos !== null ? `${pos}. ` : "";
+
+        return `
+          <div class="word-comment-item" data-word="${wordKey}">
+            <span class="word-comment-label" style="color: ${color}; font-weight: 500; cursor: pointer;">
+              ${posLabel}${wordKey}
+            </span>
+            <span class="word-comment-text" style="cursor: pointer;">
+              ${commentText}
+            </span>
+          </div>
+        `;
+      })
+      .join("");
+
+    wordCommentsSection = `
+      <div class="word-comments-summary">
+        <h6 class="word-comments-title">Comentaris de paraules</h6>
+        <div class="word-comments-list">
+          ${wordCommentsHtml}
+        </div>
+      </div>
+    `;
+  }
+
   const modalHtml = `
     <div class="modal fade" id="commentModal" tabindex="-1" aria-labelledby="commentModalLabel" aria-hidden="true">
       <div class="modal-dialog">
@@ -1071,6 +1124,7 @@ function openCommentModal(type, word = null) {
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel·la</button>
             <button type="button" class="btn btn-primary" id="save-comment-btn">Desa</button>
           </div>
+          ${wordCommentsSection}
         </div>
       </div>
     </div>
@@ -1102,6 +1156,22 @@ function openCommentModal(type, word = null) {
       await deleteComment(isGlobal, word);
       modal.hide();
     };
+  }
+
+  // Event listeners per als comentaris de paraules (només en modal global)
+  if (isGlobal) {
+    const wordCommentItems = modalEl.querySelectorAll(".word-comment-item");
+    wordCommentItems.forEach((item) => {
+      item.addEventListener("click", (e) => {
+        e.preventDefault();
+        const wordKey = item.getAttribute("data-word");
+        modal.hide(); // Tanca el modal actual
+        // Espera a que el modal es tanqui abans d'obrir el nou
+        setTimeout(() => {
+          openCommentModal("word", wordKey);
+        }, 300);
+      });
+    });
   }
 
   // Neteja el modal del DOM quan es tanca
