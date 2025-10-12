@@ -1096,7 +1096,7 @@ function openCommentModal(type, word = null) {
 
     wordCommentsSection = `
       <div class="word-comments-summary">
-        <h6 class="word-comments-title">Comentaris de paraules</h6>
+        <h6 class="word-comments-title">Comentaris a les paraules</h6>
         <div class="word-comments-list">
           ${wordCommentsHtml}
         </div>
