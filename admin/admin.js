@@ -1030,7 +1030,7 @@ function updateGlobalCommentIcon() {
 
   const hasComment = comments.global && comments.global.trim() !== "";
   icon.innerHTML = hasComment
-    ? '<i class="bi bi-chat-left-text-fill" style="color:#818181;"></i>'
+    ? '<i class="bi bi-chat-left-text-fill" style="color:#ff6800;"></i>'
     : '<i class="bi bi-chat-left"><span class="plus-sign">+</span></i>';
 
   icon.onclick = (e) => {
