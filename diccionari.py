@@ -199,6 +199,9 @@ class Diccionari:
         # Si tenim múltiples lemes, prioritzar el que coincideix exactament amb la forma
         if paraula_norm in self.mapping_flexions_multi:
             lemes = self.mapping_flexions_multi[paraula_norm]
+            # Si el set de lemes està buit, retornar None (cas anòmal però possible)
+            if not lemes:
+                return None, False
             if paraula_norm in lemes:
                 forma_canonica = paraula_norm
             else:

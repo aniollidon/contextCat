@@ -124,7 +124,7 @@ def generate_words_for_concept(concept: str, provider: str, api_key: str, model:
 
     if provider == "gemini":
         # Model per defecte (el mateix de l'script original)
-        gemini_model = model or os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        gemini_model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         headers = {"Content-Type": "application/json"}

@@ -776,6 +776,50 @@ def ranking_test_words_synonyms(filename: str, _: None = Depends(require_auth)):
     
     return {"count": total_count, "groups": out_groups}
 
+@app.get("/api/rankings/{filename}/test-words-synonyms-custom/{word}")
+def ranking_test_words_synonyms_custom(filename: str, word: str, _: None = Depends(require_auth)):
+    """Retorna els sinònims d'una paraula personalitzada amb la seva posició al ranking."""
+    file_path = WORDS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Fitxer no trobat.")
+    
+    # Normalitza la paraula
+    base_word = word.lower().strip()
+    if not base_word:
+        raise HTTPException(status_code=400, detail="Paraula buida")
+    
+    # Obté els grups de sinònims
+    synonym_groups = _get_synonyms_for_word(base_word)
+    if not synonym_groups:
+        return {"count": 0, "groups": [], "base_word": base_word}
+    
+    with open(file_path, encoding="utf-8") as f:
+        ranking = json.load(f)  # dict word->pos
+    
+    out_groups = []
+    total_count = 0
+    
+    for group in synonym_groups:
+        group_words = []
+        for w in group['synonyms']:
+            wl = str(w).strip().lower()
+            if not wl:
+                continue
+            if wl in ranking:
+                group_words.append({"word": w, "found": True, "pos": ranking[wl]})
+            else:
+                group_words.append({"word": w, "found": False})
+            total_count += 1
+        
+        if group_words:
+            out_groups.append({
+                "line_num": group['line_num'],
+                "original_line": group['original_line'],
+                "words": group_words
+            })
+    
+    return {"count": total_count, "groups": out_groups, "base_word": base_word}
+
 @app.post("/api/test-words")
 def add_test_words(req: AddTestWordsRequest, _: None = Depends(require_auth)):
     """Afegeix paraules al fitxer data/test.json (evitant duplicats). Accepta 'word' o 'words'."""

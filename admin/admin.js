@@ -391,6 +391,73 @@ async function addTestWordsPrompt() {
   }
 }
 
+async function addSynonymsTestPrompt() {
+  if (!selected) return;
+
+  const word = prompt("Paraula base per obtenir sinònims:", "");
+  if (!word || !word.trim()) return;
+
+  const wordTrimmed = word.trim();
+
+  try {
+    // Obté els sinònims de la paraula
+    const res = await fetch(
+      `${RANKINGS_API}/${selected}/test-words-synonyms-custom/${encodeURIComponent(
+        wordTrimmed
+      )}`,
+      { headers: { ...authHeaders() } }
+    );
+
+    if (!res.ok) {
+      alert("Error obtenint sinònims");
+      return;
+    }
+
+    const data = await res.json();
+
+    if (!data.groups || data.groups.length === 0) {
+      alert(`No s'han trobat sinònims per "${wordTrimmed}"`);
+      return;
+    }
+
+    // Extreu tots els sinònims trobats
+    const synonyms = [];
+    data.groups.forEach((group) => {
+      group.words.forEach((w) => {
+        if (w.word) {
+          synonyms.push(w.word);
+        }
+      });
+    });
+
+    if (synonyms.length === 0) {
+      alert(`No s'han trobat sinònims per "${wordTrimmed}"`);
+      return;
+    }
+
+    // Afegeix els sinònims al test
+    const addRes = await fetch(`${API_BASE}/test-words`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ words: synonyms }),
+    });
+
+    if (!addRes.ok) {
+      const err = await addRes.json().catch(() => ({ detail: "Error" }));
+      alert(err.detail || "Error afegint sinònims");
+      return;
+    }
+
+    const addData = await addRes.json();
+    alert(
+      `Trobats ${synonyms.length} sinònims de "${wordTrimmed}".\nAfegits ${addData.added.length} nous al test (total: ${addData.total})`
+    );
+    refreshTestOverlayIfVisible();
+  } catch (e) {
+    alert("Error de xarxa");
+  }
+}
+
 let testVisible = false;
 async function toggleTestOverlay() {
   if (!selected) return;
@@ -479,6 +546,7 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
       </div>
       <div class="btn-group btn-group-sm" role="group">
         <button class="btn btn-outline-success" id="add-test-inside" title="Afegeix paraules al test comú">+Add</button>
+        <button class="btn btn-outline-info" id="add-synonyms-test" title="Afegeix test de sinònims d'una paraula">+Sin</button>
         <button class="btn btn-outline-secondary" id="toggle-test-select" title="Mode selecció">Sel</button>
         <button class="btn btn-outline-danger" id="delete-selected-test" style="display:none;" title="Elimina seleccionades">Del</button>
         <button class="btn btn-outline-secondary" id="close-test" title="Tanca">✕</button>
@@ -588,6 +656,9 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
   const addInside = document.getElementById("add-test-inside");
   if (addInside) addInside.onclick = addTestWordsPrompt;
 
+  const addSynonymsBtn = document.getElementById("add-synonyms-test");
+  if (addSynonymsBtn) addSynonymsBtn.onclick = addSynonymsTestPrompt;
+
   initTestWordSelection();
 
   // Assigna events per saltar a posicions
@@ -661,11 +732,14 @@ window.switchTestTab = function (tabName) {
 
   // Actualitza botons d'acció (només per test comú)
   const addBtn = document.getElementById("add-test-inside");
+  const addSynBtn = document.getElementById("add-synonyms-test");
   const selectBtn = document.getElementById("toggle-test-select");
   const deleteBtn = document.getElementById("delete-selected-test");
 
   const isCommonTab = tabName === "common";
   if (addBtn) addBtn.style.display = isCommonTab ? "inline-block" : "none";
+  if (addSynBtn)
+    addSynBtn.style.display = isCommonTab ? "inline-block" : "none";
   if (selectBtn)
     selectBtn.style.display = isCommonTab ? "inline-block" : "none";
   if (deleteBtn && tabName !== "common") deleteBtn.style.display = "none";
