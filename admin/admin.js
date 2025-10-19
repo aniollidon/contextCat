@@ -65,6 +65,7 @@ let favorites = {}; // filename -> true
 let difficulties = {}; // filename -> 'facil'|'mitja'|'dificil'
 let comments = {}; // Estat dels comentaris del fitxer actual {global: "", words: {}}
 let customSynonymsData = null; // Dades de test de sinònims personalitzat (temporal)
+let customTextData = null; // Dades de test de text personalitzat (temporal)
 let showOnlyPending = false; // filtre de fitxers no validats
 let showOnlyFavorites = false; // filtre de fitxers preferits
 let autoSaveTimer = null; // temporitzador per auto-desat
@@ -431,6 +432,156 @@ async function addSynonymsTestPrompt() {
   }
 }
 
+// Funció per netejar text: elimina números i caràcters no alfabètics (mantenint català)
+function cleanCatalanText(text) {
+  // Primer convertim comes i punts-comes en salts de línia
+  text = text.replace(/[,;]/g, "\n");
+
+  // Separa per salts de línia
+  const lines = text.split("\n");
+  const cleanedLines = [];
+
+  for (let line of lines) {
+    // Elimina números i caràcters no alfabètics, mantenint lletres catalanes
+    // Manté: a-z, A-Z, àèéíòóú, ÀÈÉÍÒÓÚ, ïü, ÏÜ, ç, Ç, l·l, espais
+    let cleaned = line.replace(/[^a-zA-ZàèéíòóúÀÈÉÍÒÓÚïüÏÜçÇ·\s]/g, " ");
+
+    // Elimina espais múltiples
+    cleaned = cleaned.replace(/\s+/g, " ").trim();
+
+    // Si la línia resultant té contingut, l'afegim
+    if (cleaned) {
+      // Separa paraules per espais
+      const words = cleaned.split(" ").filter((w) => w.length > 0);
+      cleanedLines.push(...words);
+    }
+  }
+
+  return cleanedLines.join("\n");
+}
+
+// Funció per obrir modal de test personalitzat amb textbox
+function openCustomTextTestModal() {
+  if (!selected) return;
+
+  const modalHtml = `
+    <div class="modal fade" id="customTextModal" tabindex="-1" aria-labelledby="customTextModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="customTextModalLabel">Test Personalitzat - Enganxa text</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tanca"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted small">Enganxa text (es netejaran automàticament els caràcters no vàlids). Fes una línia per cada paraula.</p>
+            <p class="text-muted small"> Pots utilitzar aquest prompt: "llista 500 paraules úniques relacionades semànticament amb la paraula <b>PARAULA</b>. (només paraules simples singulars). Mostra el resultat en un bloc de codi."</p>
+            <textarea class="form-control" id="custom-text-textarea" rows="15" placeholder="Enganxa aquí el text d'internet..."></textarea>
+            <div class="mt-2">
+              <small class="text-muted">Paraules: <span id="word-count">0</span></small>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel·la</button>
+            <button type="button" class="btn btn-primary" id="create-custom-test-btn">Crear Test</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Elimina modal anterior si existeix
+  const oldModal = document.getElementById("customTextModal");
+  if (oldModal) oldModal.remove();
+
+  // Afegeix modal al DOM
+  document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+  const modalEl = document.getElementById("customTextModal");
+  const modal = new bootstrap.Modal(modalEl);
+  const textarea = document.getElementById("custom-text-textarea");
+  const wordCountSpan = document.getElementById("word-count");
+
+  // Event per netejar text automàticament quan canvia
+  textarea.addEventListener("input", () => {
+    const cleaned = cleanCatalanText(textarea.value);
+    textarea.value = cleaned;
+
+    // Actualitza contador de paraules
+    const wordCount = cleaned
+      ? cleaned.split("\n").filter((l) => l.trim()).length
+      : 0;
+    wordCountSpan.textContent = wordCount;
+  });
+
+  // Event per crear test
+  document.getElementById("create-custom-test-btn").onclick = async () => {
+    const text = textarea.value.trim();
+    if (!text) {
+      alert("El text està buit");
+      return;
+    }
+
+    const words = text.split("\n").filter((w) => w.trim());
+    if (words.length === 0) {
+      alert("No hi ha paraules vàlides");
+      return;
+    }
+
+    // Processa les paraules amb el rànquing actual
+    const ranking = await getCurrentRanking();
+    if (!ranking) {
+      alert("Error carregant el rànquing");
+      return;
+    }
+
+    const processedWords = words.map((word) => {
+      const wordLower = word.toLowerCase().trim();
+      if (wordLower in ranking) {
+        return { word: word, found: true, pos: ranking[wordLower] };
+      } else {
+        return { word: word, found: false };
+      }
+    });
+
+    customTextData = {
+      words: processedWords,
+      count: processedWords.length,
+    };
+
+    modal.hide();
+    refreshTestOverlayIfVisible();
+  };
+
+  // Neteja el modal del DOM quan es tanca
+  modalEl.addEventListener("hidden.bs.modal", () => {
+    modalEl.remove();
+  });
+
+  modal.show();
+}
+
+// Funció auxiliar per obtenir el rànquing actual
+async function getCurrentRanking() {
+  if (!selected) return null;
+  try {
+    const res = await fetch(
+      `${RANKINGS_API}/${selected}?offset=0&limit=999999`,
+      {
+        headers: { ...authHeaders() },
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const ranking = {};
+    data.words.forEach((w) => {
+      ranking[w.word.toLowerCase()] = w.pos;
+    });
+    return ranking;
+  } catch (e) {
+    return null;
+  }
+}
+
 let testVisible = false;
 async function toggleTestOverlay() {
   if (!selected) return;
@@ -445,6 +596,7 @@ async function toggleTestOverlay() {
 function hideTestOverlay() {
   testVisible = false;
   customSynonymsData = null; // Neteja dades de sinònims personalitzats
+  customTextData = null; // Neteja dades de text personalitzat
   const overlay = document.getElementById("test-overlay");
   if (overlay) {
     overlay.style.display = "none";
@@ -504,6 +656,8 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     customSynonymsData &&
     customSynonymsData.groups &&
     customSynonymsData.groups.length > 0;
+  const hasCustomText =
+    customTextData && customTextData.words && customTextData.words.length > 0;
 
   let tabsHtml = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -526,6 +680,11 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
             ? `<button class="btn btn-outline-primary" id="tab-custom" onclick="switchTestTab('custom')">Sin: ${customSynonymsData.base_word} (${customSynonymsData.count}) <span id="close-custom-test" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
             : `<button class="btn btn-outline-info" id="add-synonyms-test" title="Crear test de sinònims d'una paraula">+Sin</button>`
         }
+        ${
+          hasCustomText
+            ? `<button class="btn btn-outline-primary" id="tab-text" onclick="switchTestTab('text')">Text (${customTextData.count}) <span id="close-custom-text" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
+            : `<button class="btn btn-outline-success" id="add-text-test" title="Crear test de text personalitzat">+Text</button>`
+        }
       </div>
       <div class="btn-group btn-group-sm" role="group">
         ${
@@ -533,9 +692,15 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
             ? `<button class="btn btn-outline-info btn-sm" id="modify-synonyms-test" title="Canviar paraula del test de sinònims">↻Sin</button>`
             : ""
         }
+        ${
+          hasCustomText
+            ? `<button class="btn btn-outline-success btn-sm" id="modify-text-test" title="Modificar text personalitzat">↻Text</button>`
+            : ""
+        }
         <button class="btn btn-outline-success" id="add-test-inside" title="Afegeix paraules al test comú">+Add</button>
         <button class="btn btn-outline-secondary" id="toggle-test-select" title="Mode selecció">Sel</button>
         <button class="btn btn-outline-danger" id="delete-selected-test" style="display:none;" title="Elimina seleccionades">Del</button>
+        <button class="btn btn-outline-secondary" id="reload-test-positions" title="Recarrega posicions dels tests">↻</button>
         <button class="btn btn-outline-secondary" id="close-test" title="Tanca">✕</button>
       </div>
     </div>
@@ -647,6 +812,25 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
       .join("");
   }
 
+  // Genera contingut de text personalitzat
+  let customTextRows = "";
+  if (hasCustomText) {
+    customTextRows = customTextData.words
+      .map((w) => {
+        if (w.found) {
+          return `<div class="test-row" data-word="${
+            w.word
+          }" draggable="true" style="cursor: grab;"><span style="color:${colorPerPos(
+            w.pos
+          )}">${w.word}</span> <a href="#" data-pos="${
+            w.pos
+          }" class="jump" title="Ves a posició"> (${w.pos})</a></div>`;
+        }
+        return `<div class="test-row"><span class="text-muted">${w.word}</span> <span class="jump" style="font-size:11px">(no)</span></div>`;
+      })
+      .join("");
+  }
+
   overlay.innerHTML = `
     ${tabsHtml}
     <div id="test-common-content" class="test-tab-content" style="display:block;">
@@ -676,6 +860,14 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     </div>`
         : ""
     }
+    ${
+      hasCustomText
+        ? `
+    <div id="test-text-content" class="test-tab-content" style="display:none;">
+      <div class="test-body-text" id="test-body-text" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${customTextRows}</div>
+    </div>`
+        : ""
+    }
   `;
 
   // Assigna events
@@ -697,6 +889,29 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
       e.stopPropagation(); // Evita que es canviï a la pestanya custom
       customSynonymsData = null;
       refreshTestOverlayIfVisible();
+    };
+  }
+
+  const addTextBtn = document.getElementById("add-text-test");
+  if (addTextBtn) addTextBtn.onclick = openCustomTextTestModal;
+
+  const modifyTextBtn = document.getElementById("modify-text-test");
+  if (modifyTextBtn) modifyTextBtn.onclick = openCustomTextTestModal;
+
+  const closeCustomTextBtn = document.getElementById("close-custom-text");
+  if (closeCustomTextBtn) {
+    closeCustomTextBtn.onclick = (e) => {
+      e.stopPropagation(); // Evita que es canviï a la pestanya text
+      customTextData = null;
+      refreshTestOverlayIfVisible();
+    };
+  }
+
+  const reloadTestBtn = document.getElementById("reload-test-positions");
+  if (reloadTestBtn) {
+    reloadTestBtn.onclick = () => {
+      saveTestState(); // Guarda l'estat actual (pestanya activa, scroll)
+      loadTestOverlayData(); // Recarrega totes les dades
     };
   }
 
@@ -746,6 +961,7 @@ window.switchTestTab = function (tabName) {
       else if (id === "tab-ai") currentTab = "ai";
       else if (id === "tab-synonyms") currentTab = "synonyms";
       else if (id === "tab-custom") currentTab = "custom";
+      else if (id === "tab-text") currentTab = "text";
     }
     testState.scrollPositions[currentTab] = overlay.scrollTop || 0;
   }
@@ -827,6 +1043,8 @@ function saveTestState() {
     if (tabId === "tab-common") testState.activeTab = "common";
     else if (tabId === "tab-ai") testState.activeTab = "ai";
     else if (tabId === "tab-synonyms") testState.activeTab = "synonyms";
+    else if (tabId === "tab-custom") testState.activeTab = "custom";
+    else if (tabId === "tab-text") testState.activeTab = "text";
   }
   if (overlay) {
     const current = overlay.scrollTop || 0;
@@ -1380,6 +1598,7 @@ function loadFile(filename) {
   loading = true;
   lastMoveInfo = null;
   customSynonymsData = null; // Neteja dades de sinònims personalitzats quan canvia de fitxer
+  customTextData = null; // Neteja dades de text personalitzat quan canvia de fitxer
   renderFileList();
   renderWordsArea();
   updateWordsTitle(); // Actualitza títol en carregar fitxer
