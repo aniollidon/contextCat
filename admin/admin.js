@@ -21,7 +21,10 @@ let adminToken = null; // guardem la contrasenya (x-admin-token)
 
 async function ensureAuthenticated() {
   if (adminToken) return true;
-  const pwd = prompt("Contrasenya admin:", "");
+  const pwd = prompt(
+    "Contrasenya admin (abans recorda recarregar la pàgina per tenir els últims canvis ctrl+R):",
+    ""
+  );
   if (pwd === null) return false;
   try {
     const res = await fetch(AUTH_ENDPOINT, {
