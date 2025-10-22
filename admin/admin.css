@@ -1,3 +1,6 @@
+.rebuscada {
+  color: #0d6efd;
+}
 .word-item.moved {
   border-color: #ffd600 !important;
   box-shadow: 0 0 0 2px #ffe082;
@@ -9,6 +12,9 @@
   background: #e3f2fd;
 }
 
+.validate-chk {
+  margin-top: 8px;
+}
 /* Validació */
 .validate-chk.validated-yes {
   accent-color: #2e7d32; /* verd modern */
@@ -56,9 +62,13 @@
   background: #f8fafc;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  padding: 20px;
-  margin-bottom: 24px;
+  padding: 5px 5px 0 5px;
 }
+.files-content {
+  height: 79vh;
+  overflow-y: auto;
+}
+
 .file-list {
   display: flex;
   flex-direction: column;
@@ -73,10 +83,12 @@
   background: #fff;
   border-radius: 8px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-  padding: 10px 14px;
+  padding: 5px 6px;
+  margin: 0 2px;
   cursor: pointer;
   border: 2px solid transparent;
   transition: background 0.15s, border 0.15s;
+  font-size: smaller;
 }
 .list-item.selected {
   background: #e3f2fd;
@@ -97,21 +109,22 @@
   font-size: 11px;
 }
 .icon-btn {
+  margin-top: 4px;
+  padding: 3px;
   background: none;
   border: none;
   cursor: pointer;
-  margin-left: 8px;
+  /* margin-left: 8px; */
   color: #929292;
-  font-size: 1.2em;
+  /* font-size: 1.2em; */
 }
 .word-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
   overflow-x: auto;
-  padding: 8px 0;
   flex-wrap: wrap;
-  height: 70vh;
+  height: 78vh;
   justify-content: flex-start;
   align-content: flex-start;
 }
@@ -221,7 +234,7 @@
   cursor: pointer;
   color: #ccc;
   font-size: 16px;
-  margin-right: 8px;
+  margin-right: 7px;
   padding: 2px;
   transition: color 0.2s;
 }
@@ -317,7 +330,7 @@
   font-weight: bold;
   position: absolute;
   top: 2px;
-  right: 11px;
+  right: 6px;
 }
 
 /* Indicador de comentari de paraula */

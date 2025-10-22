@@ -97,6 +97,15 @@ function saveSettings() {
   }
 }
 
+// --- Debug de moviments ---
+const DEBUG_MOVE_LOGS = true; // posa a false per silenciar
+function logMove(...args) {
+  if (!DEBUG_MOVE_LOGS) return;
+  try {
+    console.debug(new Date().toISOString(), "[MOVE]", ...args);
+  } catch (_) {}
+}
+
 // Highlight temporal helper (classe configurable)
 function tempHighlightElement(el, ms = 1000, cls = "moved") {
   if (!el) return;
@@ -165,40 +174,39 @@ document.addEventListener("DOMContentLoaded", async () => {
 function renderApp() {
   const app = document.getElementById("app");
   app.innerHTML = `
-    <div class="container py-4">
-      <div class="row mb-4">
-        <div class="col-12 text-center">
-          <h2 class="fw-bold mb-2">Rebuscada.cat - Gestió </h2>
-          <div class="d-flex justify-content-center">
-            <button class="btn btn-outline-secondary btn-sm" id="settings-btn" title="Configuració general">
-              <i class="bi bi-gear"></i> Configuració
-            </button>
-          </div>
-        </div>
+    <div class="p-3 py-2">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0 rebuscada" >Rebuscada.cat - Gestió</h4>
+        <button class="btn btn-outline-secondary btn-sm" id="settings-btn" title="Configuració general">
+          <i class="bi bi-gear"></i>
+        </button>
       </div>
-      <div class="row g-4">
-        <div class="col-md-4">
+      <div class="row g-3" id="main-layout">
+        <div class="col-auto" style="width: 300px;">
           <div class="paper">
-            <h5 class="mb-3">Fitxers</h5>
-            <div class="d-flex align-items-center gap-3 mb-2 small">
+            <h5 class="mb-2">Fitxers</h5>
+              <div class="mb-2 small" style="display: flex; gap: 15px;">
               <div class="d-flex align-items-center gap-2">
                 <input type="checkbox" id="filter-pending" class="form-check-input" />
-                <label for="filter-pending" id="filter-pending-label" class="form-check-label" style="cursor:pointer;">Només pendents</label>
+                <label for="filter-pending" id="filter-pending-label" class="form-check-label" style="cursor:pointer;">Pendents</label>
               </div>
-              <div class="d-flex align-items-center gap-2">
+              <div class="d-flex align-items-center">
                 <input type="checkbox" id="filter-favorites" class="form-check-input" />
-                <label for="filter-favorites" id="filter-favorites-label" class="form-check-label" style="cursor:pointer;">Només preferits</label>
+                <label for="filter-favorites" id="filter-favorites-label" class="form-check-label" style="cursor:pointer;">Preferits</label>
               </div>
             </div>
-            <ul class="file-list" id="file-list"></ul>
-            <div class="d-grid mt-3 gap-2">
-              <button class="btn btn-primary" id="create-file" type="button">Crear rànquing…</button>
-              <button class="btn btn-outline-primary" id="create-random" type="button" title="Genera 10 paraules aleatòries (pot trigar)">Generar 10 aleatòries…</button>
-              <small id="random-status" class="text-muted" style="display:none;">Generant... pot trigar uns segons.</small>
+            <div class="files-content">
+
+              <ul class="file-list" id="file-list"></ul>
+              <div class="d-grid mt-3 gap-2">
+                <button class="btn btn-primary btn-sm" id="create-file" type="button">Crear rànquing…</button>
+                <button class="btn btn-outline-primary btn-sm" id="create-random" type="button" title="Genera 10 paraules aleatòries (pot trigar)">Generar 10 aleatòries…</button>
+                <small id="random-status" class="text-muted" style="display:none;">Generant... pot trigar uns segons.</small>
+              </div>
             </div>
           </div>
         </div>
-        <div class="col-md-8">
+        <div class="col" id="words-column">
           <div class="paper">
             <div class="d-flex align-items-center justify-content-between mb-2">
               <div class="d-flex align-items-center gap-2">
@@ -215,11 +223,16 @@ function renderApp() {
             <div class="input-group input-group-sm mb-2">
               <input id="search-word" type="text" class="form-control" placeholder="Cerca paraula..." />
               <button class="btn btn-outline-secondary" id="search-btn" type="button" title="Cerca">Cerca</button>
-              <button class="btn btn-outline-success" id="add-new-word-btn" type="button" title="Afegeix una paraula nova al rànquing">+Nou</button>
+              <button class="btn btn-outline-success" id="add-new-word-btn" type="button" title="Afegeix una paraula nova al rànquing">+Nova</button>
               <button class="btn btn-outline-info" id="show-test" type="button" title="Mostra paraules test">Test</button>
             </div>
-            <div id="words-area" style="min-height:120px;"></div>
-            <div id="test-overlay" style="display:none; max-height:330px; overflow:auto; border:1px solid #ddd; border-radius:6px; padding:6px; background:#fff; margin-top:8px;"></div>
+            <div id="words-area" style="min-height:79vh"></div>
+          </div>
+        </div>
+        <div class="col-auto" id="test-column" style="width: 350px; display:none;">
+          <div class="paper" style="height: 100%;">
+            <h5 class="mb-2">Testos</h5>
+            <div id="test-overlay" style="height: 84vh; overflow-y: auto; overflow-x: clip;"></div>
           </div>
         </div>
       </div>
@@ -425,39 +438,11 @@ async function addSynonymsTestPrompt() {
     // Guarda les dades de sinònims personalitzats
     customSynonymsData = data;
 
-    // Refresca la vista del test per mostrar la nova pestanya
-    refreshTestOverlayIfVisible();
+    // Refresca la vista del test i obre la pestanya del test acabat de crear
+    refreshTestOverlayIfVisible("custom");
   } catch (e) {
     alert("Error de xarxa");
   }
-}
-
-// Funció per netejar text: elimina números i caràcters no alfabètics (mantenint català)
-function cleanCatalanText(text) {
-  // Primer convertim comes i punts-comes en salts de línia
-  text = text.replace(/[,;]/g, "\n");
-
-  // Separa per salts de línia
-  const lines = text.split("\n");
-  const cleanedLines = [];
-
-  for (let line of lines) {
-    // Elimina números i caràcters no alfabètics, mantenint lletres catalanes
-    // Manté: a-z, A-Z, àèéíòóú, ÀÈÉÍÒÓÚ, ïü, ÏÜ, ç, Ç, l·l, espais
-    let cleaned = line.replace(/[^a-zA-ZàèéíòóúÀÈÉÍÒÓÚïüÏÜçÇ·\s]/g, " ");
-
-    // Elimina espais múltiples
-    cleaned = cleaned.replace(/\s+/g, " ").trim();
-
-    // Si la línia resultant té contingut, l'afegim
-    if (cleaned) {
-      // Separa paraules per espais
-      const words = cleaned.split(" ").filter((w) => w.length > 0);
-      cleanedLines.push(...words);
-    }
-  }
-
-  return cleanedLines.join("\n");
 }
 
 // Funció per obrir modal de test personalitzat amb textbox
@@ -502,9 +487,36 @@ function openCustomTextTestModal() {
   const wordCountSpan = document.getElementById("word-count");
 
   // Event per netejar text automàticament quan canvia
-  textarea.addEventListener("input", () => {
-    const cleaned = cleanCatalanText(textarea.value);
+  textarea.addEventListener("input", (e) => {
+    const cursorPos = textarea.selectionStart;
+    const textBefore = textarea.value.substring(0, cursorPos);
+    const textAfter = textarea.value.substring(cursorPos);
+
+    // Converteix comes en salts de línia
+    let cleaned = textarea.value.replace(/,|;/g, "\n");
+
+    // Neteja el text: manté només lletres catalanes i salts de línia
+    cleaned = cleaned.replace(/[^a-zA-ZàèéíòóúÀÈÉÍÒÓÚïüÏÜçÇ·\s\n]/g, "");
+
+    // Converteix múltiples salts de línia en un de sol
+    cleaned = cleaned.replace(/\n{2,}/g, "\n");
+
+    // Converteix espais múltiples en un de sol
+    cleaned = cleaned.replace(/[ \t]+/g, " ");
+
+    // Aplica el text netejat
     textarea.value = cleaned;
+
+    // Calcula la nova posició del cursor després de netejar
+    const cleanedBefore = textBefore
+      .replace(/,/g, "\n")
+      .replace(/[^a-zA-ZàèéíòóúÀÈÉÍÒÓÚïüÏÜçÇ·\s\n]/g, "")
+      .replace(/\n{2,}/g, "\n")
+      .replace(/[ \t]+/g, " ");
+    const newCursorPos = cleanedBefore.length;
+
+    // Restaura la posició del cursor
+    textarea.setSelectionRange(newCursorPos, newCursorPos);
 
     // Actualitza contador de paraules
     const wordCount = cleaned
@@ -549,7 +561,8 @@ function openCustomTextTestModal() {
     };
 
     modal.hide();
-    refreshTestOverlayIfVisible();
+    // Refresca la vista del test i obre la pestanya del test acabat de crear
+    refreshTestOverlayIfVisible("text");
   };
 
   // Neteja el modal del DOM quan es tanca
@@ -598,16 +611,27 @@ function hideTestOverlay() {
   customSynonymsData = null; // Neteja dades de sinònims personalitzats
   customTextData = null; // Neteja dades de text personalitzat
   const overlay = document.getElementById("test-overlay");
+  const testColumn = document.getElementById("test-column");
   if (overlay) {
     overlay.style.display = "none";
     overlay.innerHTML = "";
+  }
+  if (testColumn) {
+    testColumn.style.display = "none";
   }
 }
 
 async function loadTestOverlayData() {
   if (!testVisible || !selected) return;
   const overlay = document.getElementById("test-overlay");
+  const testColumn = document.getElementById("test-column");
   if (!overlay) return;
+
+  // Mostra la columna del test
+  if (testColumn) {
+    testColumn.style.display = "block";
+  }
+
   overlay.style.display = "block";
   overlay.innerHTML =
     '<div class="text-muted small">Carregant paraules test…</div>';
@@ -660,46 +684,40 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     customTextData && customTextData.words && customTextData.words.length > 0;
 
   let tabsHtml = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <div class="btn-group btn-group-sm" role="group">
-        <button class="btn btn-outline-primary active" id="tab-common" onclick="switchTestTab('common')">Test Comú (${
-          commonData.count
-        })</button>
-        ${
-          hasAiTest
-            ? `<button class="btn btn-outline-primary" id="tab-ai" onclick="switchTestTab('ai')">Test IA (${aiData.count})</button>`
-            : ""
-        }
-        ${
-          hasSynonymsTest
-            ? `<button class="btn btn-outline-primary" id="tab-synonyms" onclick="switchTestTab('synonyms')">SC sinònims (${synonymsData.count})</button>`
-            : ""
-        }
-        ${
-          hasCustomSynonyms
-            ? `<button class="btn btn-outline-primary" id="tab-custom" onclick="switchTestTab('custom')">Sin: ${customSynonymsData.base_word} (${customSynonymsData.count}) <span id="close-custom-test" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
-            : `<button class="btn btn-outline-info" id="add-synonyms-test" title="Crear test de sinònims d'una paraula">+Sin</button>`
-        }
-        ${
-          hasCustomText
-            ? `<button class="btn btn-outline-primary" id="tab-text" onclick="switchTestTab('text')">Text (${customTextData.count}) <span id="close-custom-text" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
-            : `<button class="btn btn-outline-success" id="add-text-test" title="Crear test de text personalitzat">+Text</button>`
-        }
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1;">
+        <div class="btn-group btn-group-sm" role="group">
+          <button class="btn btn-outline-primary active" id="tab-common" onclick="switchTestTab('common')" title="Test Comú (${
+            commonData.count
+          })">Comú</button>
+          ${
+            hasAiTest
+              ? `<button class="btn btn-outline-primary" id="tab-ai" onclick="switchTestTab('ai')" title="Test IA (${aiData.count})">IA</button>`
+              : ""
+          }
+          ${
+            hasSynonymsTest
+              ? `<button class="btn btn-outline-primary" id="tab-synonyms" onclick="switchTestTab('synonyms')" title="Sinònims ${wordsByPos[0].word} (${synonymsData.count})">SC</button>`
+              : ""
+          }
+          ${
+            hasCustomSynonyms
+              ? `<button class="btn btn-outline-primary" id="tab-custom" onclick="switchTestTab('custom')" title="Sinònims ${customSynonymsData.base_word} (${customSynonymsData.count})">+SC<span id="close-custom-test" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
+              : `<button class="btn btn-outline-info" id="add-synonyms-test" title="Crear test de sinònims d'una paraula">+Sin</button>`
+          }
+          ${
+            hasCustomText
+              ? `<button class="btn btn-outline-primary" id="tab-text" onclick="switchTestTab('text')" title="Text personalitzat (${customTextData.count})"> Propi <span id="close-custom-text" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
+              : `<button class="btn btn-outline-success" id="add-text-test" title="Crear test de text personalitzat">+Propi</button>`
+          }
+        </div>
+        <div class="btn-group btn-group-sm edit-test-tools-actions" role="group">
+          <button class="btn btn-outline-success" id="add-test-inside" title="Afegeix paraules al test comú">+Add</button>
+          <button class="btn btn-outline-secondary" id="toggle-test-select" title="Mode selecció">Sel</button>
+          <button class="btn btn-outline-danger" id="delete-selected-test" style="display:none;" title="Elimina seleccionades">Del</button>
+        </div>
       </div>
-      <div class="btn-group btn-group-sm" role="group">
-        ${
-          hasCustomSynonyms
-            ? `<button class="btn btn-outline-info btn-sm" id="modify-synonyms-test" title="Canviar paraula del test de sinònims">↻Sin</button>`
-            : ""
-        }
-        ${
-          hasCustomText
-            ? `<button class="btn btn-outline-success btn-sm" id="modify-text-test" title="Modificar text personalitzat">↻Text</button>`
-            : ""
-        }
-        <button class="btn btn-outline-success" id="add-test-inside" title="Afegeix paraules al test comú">+Add</button>
-        <button class="btn btn-outline-secondary" id="toggle-test-select" title="Mode selecció">Sel</button>
-        <button class="btn btn-outline-danger" id="delete-selected-test" style="display:none;" title="Elimina seleccionades">Del</button>
+      <div class="btn-group btn-group-sm edit-test-tools-controls" role="group">
         <button class="btn btn-outline-secondary" id="reload-test-positions" title="Recarrega posicions dels tests">↻</button>
         <button class="btn btn-outline-secondary" id="close-test" title="Tanca">✕</button>
       </div>
@@ -710,13 +728,21 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
   const commonRows = commonData.words
     .map((w) => {
       if (w.found) {
-        return `<div class="test-row" data-word="${
-          w.word
-        }" draggable="true" style="cursor: grab;"><span style="color:${colorPerPos(
+        return `<div class="test-row" data-word="${w.word}" data-pos="${
           w.pos
-        )}">${w.word}</span> <a href="#" data-pos="${
+        }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
+          <span style="color:${colorPerPos(w.pos)}">${w.word}</span>
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <a href="#" data-pos="${
+              w.pos
+            }" class="jump" title="Ves a posició"> (${w.pos})</a>
+            <button class="test-word-menu-btn" data-word="${
+              w.word
+            }" data-pos="${
           w.pos
-        }" class="jump" title="Ves a posició"> (${w.pos})</a></div>`;
+        }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+          </div>
+        </div>`;
       }
       return `<div class="test-row" data-word="${w.word}"><span class="text-muted">${w.word}</span> <span class="jump" style="font-size:11px">(no)</span></div>`;
     })
@@ -727,13 +753,21 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     aiRows = aiData.words
       .map((w) => {
         if (w.found) {
-          return `<div class="test-row-ai" data-word="${
-            w.word
-          }" draggable="true" style="cursor: grab;"><span style="color:${colorPerPos(
+          return `<div class="test-row-ai" data-word="${w.word}" data-pos="${
             w.pos
-          )}">${w.word}</span> <a href="#" data-pos="${
+          }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
+            <span style="color:${colorPerPos(w.pos)}">${w.word}</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <a href="#" data-pos="${
+                w.pos
+              }" class="jump" title="Ves a posició"> (${w.pos})</a>
+              <button class="test-word-menu-btn" data-word="${
+                w.word
+              }" data-pos="${
             w.pos
-          }" class="jump" title="Ves a posició"> (${w.pos})</a></div>`;
+          }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+            </div>
+          </div>`;
         }
         return `<div class="test-row-ai"><span class="text-muted">${w.word}</span> <span class="jump" style="font-size:11px">(no)</span></div>`;
       })
@@ -750,11 +784,21 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
               if (w.found) {
                 return `<div class="test-row-synonyms" data-word="${
                   w.word
-                }" draggable="true" style="cursor: grab;"><span style="color:${colorPerPos(
+                }" data-pos="${
                   w.pos
-                )}">${w.word}</span> <a href="#" data-pos="${
+                }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
+                  <span style="color:${colorPerPos(w.pos)}">${w.word}</span>
+                  <div style="display: flex; align-items: center; gap: 4px;">
+                    <a href="#" data-pos="${
+                      w.pos
+                    }" class="jump" title="Ves a posició"> (${w.pos})</a>
+                    <button class="test-word-menu-btn" data-word="${
+                      w.word
+                    }" data-pos="${
                   w.pos
-                }" class="jump" title="Ves a posició"> (${w.pos})</a></div>`;
+                }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+                  </div>
+                </div>`;
               }
               return `<div class="test-row-synonyms"><span class="text-muted">${w.word}</span> <span class="jump" style="font-size:11px">(no)</span></div>`;
             })
@@ -788,11 +832,21 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
             if (w.found) {
               return `<div class="test-row-synonyms" data-word="${
                 w.word
-              }" draggable="true" style="cursor: grab;"><span style="color:${colorPerPos(
+              }" data-pos="${
                 w.pos
-              )}">${w.word}</span> <a href="#" data-pos="${
+              }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
+                <span style="color:${colorPerPos(w.pos)}">${w.word}</span>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <a href="#" data-pos="${
+                    w.pos
+                  }" class="jump" title="Ves a posició"> (${w.pos})</a>
+                  <button class="test-word-menu-btn" data-word="${
+                    w.word
+                  }" data-pos="${
                 w.pos
-              }" class="jump" title="Ves a posició"> (${w.pos})</a></div>`;
+              }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+                </div>
+              </div>`;
             }
             return `<div class="test-row-synonyms"><span class="text-muted">${w.word}</span> <span class="jump" style="font-size:11px">(no)</span></div>`;
           })
@@ -818,13 +872,21 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     customTextRows = customTextData.words
       .map((w) => {
         if (w.found) {
-          return `<div class="test-row" data-word="${
-            w.word
-          }" draggable="true" style="cursor: grab;"><span style="color:${colorPerPos(
+          return `<div class="test-row" data-word="${w.word}" data-pos="${
             w.pos
-          )}">${w.word}</span> <a href="#" data-pos="${
+          }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
+            <span style="color:${colorPerPos(w.pos)}">${w.word}</span>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <a href="#" data-pos="${
+                w.pos
+              }" class="jump" title="Ves a posició"> (${w.pos})</a>
+              <button class="test-word-menu-btn" data-word="${
+                w.word
+              }" data-pos="${
             w.pos
-          }" class="jump" title="Ves a posició"> (${w.pos})</a></div>`;
+          }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+            </div>
+          </div>`;
         }
         return `<div class="test-row"><span class="text-muted">${w.word}</span> <span class="jump" style="font-size:11px">(no)</span></div>`;
       })
@@ -888,7 +950,8 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     closeCustomBtn.onclick = (e) => {
       e.stopPropagation(); // Evita que es canviï a la pestanya custom
       customSynonymsData = null;
-      refreshTestOverlayIfVisible();
+      // Després de tancar la pestanya custom, torna a 'common'
+      refreshTestOverlayIfVisible("common");
     };
   }
 
@@ -903,7 +966,8 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     closeCustomTextBtn.onclick = (e) => {
       e.stopPropagation(); // Evita que es canviï a la pestanya text
       customTextData = null;
-      refreshTestOverlayIfVisible();
+      // Després de tancar la pestanya de text, torna a 'common'
+      refreshTestOverlayIfVisible("common");
     };
   }
 
@@ -944,6 +1008,17 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
       draggableEl.style.opacity = "1";
     });
   });
+
+  // Assigna events per als botons de menú de paraules del test
+  overlay.querySelectorAll(".test-word-menu-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const word = btn.getAttribute("data-word");
+      const pos = parseInt(btn.getAttribute("data-pos"), 10);
+      showTestWordMenu(e, word, pos, btn);
+    });
+  });
 }
 
 // Canvia entre pestanyes del test
@@ -972,13 +1047,20 @@ window.switchTestTab = function (tabName) {
     .forEach((btn) => {
       btn.classList.remove("active");
     });
-  document.getElementById(`tab-${tabName}`).classList.add("active");
+  let targetBtn = document.getElementById(`tab-${tabName}`);
+  if (!targetBtn) {
+    // Si la pestanya no existeix (p.ex. s'ha tancat la custom), fem fallback a 'common'
+    tabName = "common";
+    targetBtn = document.getElementById("tab-common");
+  }
+  if (targetBtn) targetBtn.classList.add("active");
 
   // Mostra/amaga contingut (reset de display dels contenidors)
   document.querySelectorAll(".test-tab-content").forEach((content) => {
     content.style.display = "none";
   });
-  document.getElementById(`test-${tabName}-content`).style.display = "block";
+  const targetContent = document.getElementById(`test-${tabName}-content`);
+  if (targetContent) targetContent.style.display = "block";
   // Restaura overlay.scrollTop per aquest tab
   if (overlay) {
     const saved = testState.scrollPositions[tabName];
@@ -1015,20 +1097,30 @@ let testState = {
   lastScroll: 0,
 };
 // Config restauració scroll
-const TEST_SCROLL_RESTORE_MAX_ATTEMPTS = 20;
-const TEST_SCROLL_RESTORE_INTERVAL = 70; // ms
+const TEST_SCROLL_RESTORE_MAX_ATTEMPTS = 30;
+const TEST_SCROLL_RESTORE_INTERVAL = 50; // ms
 function attemptOverlayScroll(desired, attempt = 1) {
   const overlay = document.getElementById("test-overlay");
   if (!overlay) return;
-  // Si overlay encara no té prou height (offsetHeight ~ clientHeight i scrollHeight petit) seguim intentant
+
+  // Força scroll abans de comprovar
   overlay.scrollTop = desired;
-  const done = Math.abs((overlay.scrollTop || 0) - desired) < 3;
-  if (done) return;
-  if (attempt >= TEST_SCROLL_RESTORE_MAX_ATTEMPTS) return;
-  setTimeout(
-    () => attemptOverlayScroll(desired, attempt + 1),
-    TEST_SCROLL_RESTORE_INTERVAL
-  );
+
+  // Comprova si hem arribat a la posició desitjada (amb marge de 5px)
+  const current = overlay.scrollTop || 0;
+  const done = Math.abs(current - desired) < 5;
+
+  // Si està lluny del desitjat i encara tenim intents, continua
+  if (!done && attempt < TEST_SCROLL_RESTORE_MAX_ATTEMPTS) {
+    // Comprova que el contenidor tingui prou alçada per fer scroll
+    const hasContent = overlay.scrollHeight > overlay.clientHeight;
+    if (hasContent || attempt < 10) {
+      setTimeout(
+        () => attemptOverlayScroll(desired, attempt + 1),
+        TEST_SCROLL_RESTORE_INTERVAL
+      );
+    }
+  }
 }
 
 // Guarda l'estat actual del test abans de recarregar
@@ -1068,19 +1160,138 @@ function restoreTestState(desiredOverride) {
   });
 }
 
-function refreshTestOverlayIfVisible() {
+function refreshTestOverlayIfVisible(desiredActiveTab) {
   if (!testVisible) return;
   saveTestState();
   const prevActive = testState.activeTab;
   const prevScroll = testState.scrollPositions[prevActive];
+  const chosenActive = desiredActiveTab || prevActive;
   // Afegim classe de placeholder mentre carrega per evitar salt visual
   const overlay = document.getElementById("test-overlay");
   if (overlay) overlay.classList.add("loading-test-refresh");
   loadTestOverlayData().then(() => {
     if (overlay) overlay.classList.remove("loading-test-refresh");
-    testState.activeTab = prevActive;
-    if (prevScroll != null) testState.scrollPositions[prevActive] = prevScroll;
-    restoreTestState(prevScroll);
+    testState.activeTab = chosenActive;
+    if (desiredActiveTab) {
+      // Si forcem nova pestanya, inicialitza scroll a 0 si no hi ha estat guardat
+      if (testState.scrollPositions[chosenActive] == null) {
+        testState.scrollPositions[chosenActive] = 0;
+      }
+    } else if (prevScroll != null) {
+      testState.scrollPositions[prevActive] = prevScroll;
+    }
+    // Petit delay per assegurar que el DOM està completament renderitzat
+    setTimeout(() => {
+      restoreTestState(
+        desiredActiveTab ? testState.scrollPositions[chosenActive] : prevScroll
+      );
+    }, 10);
+  });
+}
+
+// Actualitza només els atributs d'una paraula dins dels tests visibles per evitar perdre l'scroll
+function updateTestWordAttributes(word, newPos) {
+  if (!testVisible) return;
+  const overlay = document.getElementById("test-overlay");
+  if (!overlay) return;
+
+  const rows = Array.from(
+    overlay.querySelectorAll(
+      ".test-row[data-word], .test-row-ai[data-word], .test-row-synonyms[data-word]"
+    )
+  ).filter(
+    (el) =>
+      (el.getAttribute("data-word") || "").toLowerCase() === word.toLowerCase()
+  );
+
+  if (!rows.length) {
+    logMove("updateTestWordAttributes:rows=0", { word, newPos });
+    return; // res a actualitzar
+  }
+  logMove("updateTestWordAttributes", { word, newPos, rows: rows.length });
+
+  const makeFoundMarkup = (cls, w, pos) => {
+    const color = colorPerPos(pos);
+    return `
+      <span style="color:${color}">${w}</span>
+      <div style="display: flex; align-items: center; gap: 4px;">
+        <a href="#" data-pos="${pos}" class="jump" title="Ves a posició"> (${pos})</a>
+        <button class="test-word-menu-btn" data-word="${w}" data-pos="${pos}" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+      </div>`;
+  };
+
+  const makeNotFoundMarkup = (w) => {
+    return `<span class="text-muted">${w}</span> <span class="jump" style="font-size:11px">(no)</span>`;
+  };
+
+  const attachRowEvents = (rowEl) => {
+    // jump link
+    const a = rowEl.querySelector("a.jump");
+    if (a) {
+      a.addEventListener("click", async (e) => {
+        e.preventDefault();
+        const p = parseInt(a.getAttribute("data-pos"), 10);
+        if (isNaN(p)) return;
+        await ensureVisible(p, {
+          highlight: true,
+          special: true,
+          force: p >= PAGE_SIZE,
+          forceScroll: true,
+        });
+      });
+    }
+    // menu button
+    const btn = rowEl.querySelector(".test-word-menu-btn");
+    if (btn) {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const w = btn.getAttribute("data-word");
+        const p = parseInt(btn.getAttribute("data-pos"), 10);
+        showTestWordMenu(e, w, p, btn);
+      });
+    }
+    // draggable
+    if (rowEl.getAttribute("draggable") === "true") {
+      rowEl.addEventListener("dragstart", (e) => {
+        const w = rowEl.getAttribute("data-word");
+        e.dataTransfer.setData("text/plain", w);
+        e.dataTransfer.setData("application/x-test-word", w);
+        rowEl.style.opacity = "0.5";
+      });
+      rowEl.addEventListener("dragend", () => {
+        rowEl.style.opacity = "1";
+      });
+    }
+  };
+
+  rows.forEach((row) => {
+    const clsTestRow = row.classList.contains("test-row")
+      ? "test-row"
+      : row.classList.contains("test-row-ai")
+      ? "test-row-ai"
+      : "test-row-synonyms";
+    const w = row.getAttribute("data-word");
+    if (newPos !== null && newPos !== undefined) {
+      // estat TROBADA
+      row.setAttribute("data-pos", String(newPos));
+      row.setAttribute("draggable", "true");
+      row.style.cursor = "grab";
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.justifyContent = "space-between";
+      row.innerHTML = makeFoundMarkup(clsTestRow, w, newPos);
+    } else {
+      // estat NO TROBADA
+      row.removeAttribute("data-pos");
+      row.removeAttribute("draggable");
+      row.style.cursor = "default";
+      row.style.display = "";
+      row.style.alignItems = "";
+      row.style.justifyContent = "";
+      row.innerHTML = makeNotFoundMarkup(w);
+    }
+    attachRowEvents(row);
   });
 }
 
@@ -1299,7 +1510,7 @@ function renderFileList() {
       // Extreu la paraula sense l'extensió .json i la codifica en Base64
       const word = f.replace(/\.json$/, "");
       const wordBase64 = btoa(word);
-      const gameUrl = `http://5.250.190.223/?word=${wordBase64}`;
+      const gameUrl = `https://rebuscada.cat/?word=${wordBase64}`;
       window.open(gameUrl, "_blank", "noopener");
     };
     li.appendChild(play);
@@ -1791,6 +2002,10 @@ let dragIdx = null;
 function onDragStart(e, pos, item) {
   dragIdx = pos;
   e.dataTransfer.effectAllowed = "move";
+  try {
+    const w = wordsByPos[pos] ? wordsByPos[pos].word : undefined;
+    logMove("dragstart", { fromPos: pos, word: w });
+  } catch (_) {}
   setTimeout(() => item.classList.add("dragging"), 0);
 }
 function onDragEnd(e, item) {
@@ -1823,6 +2038,7 @@ function onDrop(e, pos, item) {
   const testWord = e.dataTransfer.getData("application/x-test-word");
   if (testWord) {
     // És una paraula arrossegada des d'un test
+    logMove("drop-from-test", { word: testWord, toPos: pos });
     insertWordFromTest(testWord, pos);
     return;
   }
@@ -1834,15 +2050,24 @@ function onDrop(e, pos, item) {
   const toIndex = pos;
   dragIdx = null;
 
+  try {
+    const w = wordsByPos[fromIndex] ? wordsByPos[fromIndex].word : undefined;
+    logMove("drop-in-list", { word: w, fromPos: fromIndex, toPos: toIndex });
+  } catch (_) {}
+
   // Paraula a moure (pot no estar carregada si s'ha mogut prèviament), obtenim del bloc si existeix
   const wObj = wordsByPos[fromIndex];
   if (!wObj) {
     // Fallback: recarrega bloc inicial i surt
+    logMove("drop-miss-word", {
+      fromPos: fromIndex,
+      toPos: toIndex,
+      note: "reloadInitialBlock fallback",
+    });
     reloadInitialBlock();
     return;
   }
-  // Desa estat (scroll test) abans d'actualitzar
-  saveTestState();
+  // L'estat del test es guarda dins unifiedInsertOrMove
   unifiedInsertOrMove(wObj.word, toIndex, {
     highlight: true,
     fromPos: fromIndex,
@@ -1852,15 +2077,32 @@ function onDrop(e, pos, item) {
 // Insereix una paraula del test a una posició específica
 async function insertWordFromTest(word, targetPos) {
   if (!word || targetPos === 0) return;
-  saveTestState();
-  unifiedInsertOrMove(word, targetPos, { highlight: true });
+  logMove("insertWordFromTest", { word, toPos: targetPos });
+  // No cal saveTestState aquí, ja es fa dins unifiedInsertOrMove
+  await unifiedInsertOrMove(word, targetPos, {
+    highlight: true,
+    fromTest: true,
+  });
 }
 
 // Funció unificada per inserir o moure una paraula al rànquing
 async function unifiedInsertOrMove(word, toPos, options = {}) {
   if (!selected) return;
-  const { highlight = false, fromPos = null } = options;
+  const { highlight = false, fromPos = null, fromTest = false } = options;
+
+  // Guarda l'estat del test només si ve del test (per preservar scroll)
+  if (fromTest && testVisible) {
+    saveTestState();
+  }
+
   try {
+    logMove("insert-or-move:request", {
+      file: selected,
+      word,
+      fromPos,
+      toPos,
+      fromTest,
+    });
     const res = await fetch(`${RANKINGS_API}/${selected}/insert-or-move`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
@@ -1868,14 +2110,23 @@ async function unifiedInsertOrMove(word, toPos, options = {}) {
     });
     if (!res.ok) throw new Error("Error inserint/movent");
     const data = await res.json();
+    logMove("insert-or-move:response", {
+      action: data.action,
+      word: data.word,
+      to: data.to,
+      total: data.total,
+    });
     total = data.total;
     // Recarrega bloc inicial per mantenir coherència (no marquem dirty: backend ja és font de veritat)
     const changedPos = fromPos != null ? Math.min(fromPos, data.to) : data.to;
     await reloadInitialBlock();
-    // Recarrega les posicions carregades superiors afectades pel desplaçament
-    await refreshLoadedAfter(changedPos + 1);
+    // Recarrega les posicions carregades afectades pel desplaçament
+    let startRefresh = changedPos;
+    if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE; // evita repetir el bloc inicial
+    await refreshLoadedAfter(startRefresh);
     if (highlight) highlightMovedWord(data.to, data.action === "inserted");
-    refreshTestOverlayIfVisible();
+    // Actualitza només els atributs de la paraula dins dels tests (evitem recarregar i perdre l'scroll)
+    updateTestWordAttributes(word, data.to);
   } catch (e) {
     console.error("unifiedInsertOrMove error", e);
     alert("No s'ha pogut actualitzar el rànquing");
@@ -1900,6 +2151,7 @@ function highlightMovedWord(pos, special) {
 
 // Recarrega (refetch) els trams contigus ja carregats amb posició >= startPos
 async function refreshLoadedAfter(startPos) {
+  logMove("refreshLoadedAfter:start", { file: selected, startPos });
   // Detecta rangs contigus de posicions carregades >= startPos (excloent les < PAGE_SIZE perquè ja s'han refrescat)
   const loaded = Object.keys(wordsByPos)
     .map(Number)
@@ -1922,6 +2174,7 @@ async function refreshLoadedAfter(startPos) {
   ranges.push([rangeStart, prev]);
   for (const [a, b] of ranges) {
     const len = b - a + 1;
+    logMove("refreshLoadedAfter:range", { from: a, to: b, len });
     try {
       const res = await fetch(
         `${RANKINGS_API}/${selected}?offset=${a}&limit=${len}`,
@@ -1933,7 +2186,174 @@ async function refreshLoadedAfter(startPos) {
       // ignore errors individuals
     }
   }
+  logMove("refreshLoadedAfter:done", { ranges: ranges.length });
   renderWordsArea();
+}
+
+// Funció helper per posicionar menús flotants dins de la pantalla
+function positionMenu(menu, x, y) {
+  // Posició inicial (fora de pantalla per mesurar)
+  menu.style.left = "-9999px";
+  menu.style.top = "-9999px";
+  menu.style.visibility = "hidden";
+  menu.style.display = "block";
+
+  // Obté dimensions del menú
+  const rect = menu.getBoundingClientRect();
+  const menuWidth = rect.width;
+  const menuHeight = rect.height;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  let finalX = x;
+  let finalY = y;
+
+  // Comprova si surt per la dreta
+  if (x + menuWidth > viewportWidth) {
+    finalX = Math.max(0, x - menuWidth);
+  }
+
+  // Comprova si surt per l'esquerra
+  if (finalX < 0) {
+    finalX = 0;
+  }
+
+  // Comprova si surt per baix
+  if (y + menuHeight > viewportHeight) {
+    finalY = Math.max(0, y - menuHeight);
+  }
+
+  // Comprova si surt per dalt
+  if (finalY < 0) {
+    finalY = 0;
+  }
+
+  // Aplica posició final
+  menu.style.left = finalX + "px";
+  menu.style.top = finalY + "px";
+  menu.style.visibility = "visible";
+} // Menú contextual per paraules del test
+function showTestWordMenu(e, word, pos, btn) {
+  e.preventDefault();
+  e.stopPropagation();
+  closeMenu();
+
+  menuAnchor = { x: e.clientX, y: e.clientY };
+  const menuRoot = document.getElementById("menu-root");
+  const menu = document.createElement("div");
+  menu.className = "menu";
+
+  let html = `
+    <div class="menu-item" id="test-move-to-pos">Mou a posició...</div>
+    <div class="menu-item" id="test-move-end">Mou al final</div>
+    <div class="menu-item" id="test-open-dict">Cerca al diccionari</div>
+  `;
+
+  menu.innerHTML = html;
+  menuRoot.appendChild(menu);
+
+  // Posiciona el menú dins de la pantalla
+  positionMenu(menu, menuAnchor.x, menuAnchor.y);
+
+  // Event per moure a una nova posició (obre prompt)
+  document.getElementById("test-move-to-pos").onclick = async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeMenu();
+
+    const newPosStr = prompt(
+      `Mou "${word}" a quina posició? (actual: ${pos})`,
+      ""
+    );
+    if (newPosStr === null) return;
+    const newPos = parseInt(newPosStr, 10);
+    if (isNaN(newPos) || newPos < 0) {
+      alert("Posició no vàlida");
+      return;
+    }
+
+    if (!selected) return;
+    try {
+      logMove("test-menu:move-to-pos", {
+        file: selected,
+        word,
+        fromPos: pos,
+        toPos: newPos,
+      });
+      const res = await fetch(`${RANKINGS_API}/${selected}/insert-or-move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ word, to_pos: newPos }),
+      });
+      if (!res.ok) throw new Error("Error movent paraula");
+      const data = await res.json();
+      await reloadInitialBlock();
+      // Refresca qualsevol bloc carregat afectat pel canvi (incloent > PAGE_SIZE)
+      try {
+        let startRefresh = Math.min(pos, data.to);
+        if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
+        await refreshLoadedAfter(startRefresh);
+      } catch (_) {}
+      updateTestWordAttributes(word, data.to);
+    } catch (e) {
+      alert("No s'ha pogut moure la paraula");
+    }
+  };
+
+  // Event per moure al final
+  document.getElementById("test-move-end").onclick = async (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeMenu();
+    if (!selected) return;
+    try {
+      logMove("test-menu:move-to-end", {
+        file: selected,
+        word,
+        fromPos: pos,
+        toPos: total,
+      });
+      const res = await fetch(`${RANKINGS_API}/${selected}/insert-or-move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ word, to_pos: total }),
+      });
+      if (!res.ok) throw new Error("Error movent al final");
+      const data = await res.json();
+      await reloadInitialBlock();
+      try {
+        let startRefresh = Math.min(pos, data.to);
+        if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
+        await refreshLoadedAfter(startRefresh);
+      } catch (_) {}
+      updateTestWordAttributes(word, data.to);
+    } catch (e) {
+      alert("No s'ha pogut moure la paraula al final");
+    }
+  };
+
+  // Event per cercar al diccionari
+  document.getElementById("test-open-dict").onclick = (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    closeMenu();
+    const url = DICT_URL_TEMPLATE.replace(
+      "[PARAULA]",
+      encodeURIComponent(word)
+    );
+    window.open(url, "_blank", "noopener");
+  };
+
+  // Tanca el menú si es clica fora
+  const closeHandler = (ev) => {
+    if (!menu.contains(ev.target)) {
+      closeMenu();
+      document.removeEventListener("click", closeHandler);
+    }
+  };
+  setTimeout(() => {
+    document.addEventListener("click", closeHandler);
+  }, 10);
 }
 
 // Menú contextual
@@ -1945,8 +2365,6 @@ function showMenu(e, pos) {
   const menuRoot = document.getElementById("menu-root");
   const menu = document.createElement("div");
   menu.className = "menu";
-  menu.style.left = menuAnchor.x + "px";
-  menu.style.top = menuAnchor.y + "px";
   // Construïm menú amb opcions bàsiques + moviments ràpids
   const quickTargets = [300, 1500, 3000];
   const w = wordsByPos[pos];
@@ -1968,6 +2386,9 @@ function showMenu(e, pos) {
   html += `<div class="menu-item" id="delete-word" style="color:#c62828;">Elimina paraula…</div>`;
   menu.innerHTML = html;
   menuRoot.appendChild(menu);
+
+  // Posiciona el menú dins de la pantalla
+  positionMenu(menu, menuAnchor.x, menuAnchor.y);
 
   document.getElementById("comment-word").onclick = (ev) => {
     ev.preventDefault();
@@ -2028,15 +2449,28 @@ function showMenu(e, pos) {
         closeMenu();
         return;
       }
-      await moveAbsolute(menuIdx, target);
+      logMove("quick-move", {
+        file: selected,
+        fromPos: menuIdx,
+        toPos: target,
+      });
+      const fromPos = menuIdx;
+      const data = await moveAbsolute(fromPos, target);
       closeMenu();
       await reloadInitialBlock();
+      try {
+        let startRefresh = Math.min(fromPos, target);
+        if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
+        await refreshLoadedAfter(startRefresh);
+      } catch (_) {}
       await ensureVisible(target, {
         highlight: true,
         special: true,
         force: target >= PAGE_SIZE,
       });
-      refreshTestOverlayIfVisible();
+      if (data && data.word !== undefined && data.to !== undefined) {
+        updateTestWordAttributes(data.word, data.to);
+      }
     });
   });
   // Només tanca el menú si es fa clic fora
@@ -2065,30 +2499,44 @@ async function handleMoveToPrompt() {
   if (isNaN(target) || target < 0) target = 0;
   if (target >= total) target = total - 1;
   if (target === absoluteFrom) return closeMenu();
-  await moveAbsolute(absoluteFrom, target);
+  const data = await moveAbsolute(absoluteFrom, target);
   closeMenu();
   await reloadInitialBlock();
+  try {
+    let startRefresh = Math.min(absoluteFrom, target);
+    if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
+    await refreshLoadedAfter(startRefresh);
+  } catch (_) {}
   await ensureVisible(target, {
     highlight: true,
     special: true,
     force: target >= PAGE_SIZE,
   });
-  refreshTestOverlayIfVisible();
+  if (data && data.word !== undefined && data.to !== undefined) {
+    updateTestWordAttributes(data.word, data.to);
+  }
 }
 async function handleSendToEndMenu() {
   if (menuIdx === null) return closeMenu();
   const absoluteFrom = menuIdx;
   const target = total - 1;
   if (target === absoluteFrom) return closeMenu();
-  await moveAbsolute(absoluteFrom, target);
+  const data = await moveAbsolute(absoluteFrom, target);
   closeMenu();
   await reloadInitialBlock();
+  try {
+    let startRefresh = Math.min(absoluteFrom, target);
+    if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
+    await refreshLoadedAfter(startRefresh);
+  } catch (_) {}
   await ensureVisible(target, {
     highlight: true,
     special: true,
     force: target >= PAGE_SIZE,
   });
-  refreshTestOverlayIfVisible();
+  if (data && data.word !== undefined && data.to !== undefined) {
+    updateTestWordAttributes(data.word, data.to);
+  }
 }
 
 async function handleDeleteWord() {
@@ -2113,29 +2561,45 @@ async function handleDeleteWord() {
     // Eliminem totes les posicions carregades >= pos fins trobar un forat i refetch fragment inicial
     // Estratègia simple: recarregar bloc inicial i mantenir la resta (es podria optimitzar)
     await reloadInitialBlock();
+    // Refresca qualsevol bloc carregat a partir de la posició esborrada (evitant el bloc inicial)
+    try {
+      let startRefresh = pos;
+      if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
+      await refreshLoadedAfter(startRefresh);
+    } catch (_) {}
     total = data.total;
     // Si la paraula eliminada era part de lastMoveInfo, neteja
     if (lastMoveInfo && lastMoveInfo.toPos === pos) lastMoveInfo = null;
     renderWordsArea();
     // Una eliminació no necessita desat addicional (ja està persistit), però marquem estat
     showAutoSaveDone();
-    refreshTestOverlayIfVisible();
+    // Actualitza els tests només per aquesta paraula (ara ja no està trobada)
+    if (wordObj && wordObj.word) {
+      updateTestWordAttributes(wordObj.word, null);
+    }
   } catch (e) {
     alert(e.message);
   }
 }
 
 async function moveAbsolute(fromPos, toPos) {
+  logMove("moveAbsolute:request", { file: selected, fromPos, toPos });
   const res = await fetch(`${RANKINGS_API}/${selected}/move`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ from_pos: fromPos, to_pos: toPos }),
   });
+  let data = null;
   try {
-    const data = await res.json();
+    data = await res.json();
     if (data && data.word !== undefined && data.to !== undefined) {
       lastMoveInfo = { word: data.word, toPos: data.to };
     }
+    logMove("moveAbsolute:response", {
+      word: data && data.word,
+      to: data && data.to,
+      total: data && data.total,
+    });
   } catch (_) {
     // ignore JSON parse errors
   }
@@ -2144,9 +2608,14 @@ async function moveAbsolute(fromPos, toPos) {
     delete wordsByPos[fromPos];
   }
   // El moviment ja s'ha desat al backend; no cal marcar dirty.
+  return data;
 }
 
 async function reloadInitialBlock() {
+  logMove("reloadInitialBlock", {
+    file: selected,
+    range: `0..${PAGE_SIZE - 1}`,
+  });
   const res = await fetch(
     `${RANKINGS_API}/${selected}?offset=0&limit=${PAGE_SIZE}`,
     {
@@ -2167,7 +2636,6 @@ async function reloadInitialBlock() {
   total = data.total;
   renderWordsArea();
   updateWordsTitle(); // Actualitza títol després de recarregar
-  refreshTestOverlayIfVisible();
 }
 
 // options: {highlight, force, special, forceScroll}
@@ -2388,7 +2856,7 @@ function saveFile() {
       if (!r.ok) throw new Error();
       dirty = false;
       showAutoSaveDone();
-      refreshTestOverlayIfVisible();
+      // No recarreguem els tests automàticament per no perdre l'scroll
     })
     .catch(() => {
       if (status) {
@@ -2467,7 +2935,7 @@ function loadMoreGap(start, endKnown) {
         }, 0);
       }
     });
-  refreshTestOverlayIfVisible();
+  // No cal recarregar els tests aquí; només estem carregant més paraules per a la llista
 }
 
 function triggerSearch(term) {
@@ -2548,6 +3016,8 @@ async function promptAddNewWord() {
       special: true,
       force: data.to >= PAGE_SIZE,
     });
+    // Reflecteix el canvi als tests sense recarregar-los (per mantenir l'scroll)
+    updateTestWordAttributes(data.word, data.to);
     alert(
       `Afegida '${data.word}' a posició ${data.to}.` +
         (data.is_inflection
