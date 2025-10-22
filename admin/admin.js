@@ -45,6 +45,60 @@ function authHeaders() {
   return adminToken ? { "x-admin-token": adminToken } : {};
 }
 
+// Força no-cache per a fetch (GET/HEAD) afegint query i capçaleres
+(function patchFetchNoCache() {
+  try {
+    const origFetch = window.fetch.bind(window);
+    window.fetch = function (input, init) {
+      let reqUrl = null;
+      let url = input;
+      let opts = init || {};
+      // Normalitza mètode
+      const method = (opts && opts.method ? opts.method : "GET").toUpperCase();
+      // Detecta URL de la petició (suporta Request object)
+      if (typeof url === "string") {
+        reqUrl = url;
+      } else if (
+        url &&
+        typeof url === "object" &&
+        typeof url.url === "string"
+      ) {
+        reqUrl = url.url;
+      }
+
+      const isApi =
+        reqUrl && (reqUrl.startsWith(API_BASE) || reqUrl.startsWith(SERVER));
+
+      // Només fem cache-busting en NO-API GET/HEAD
+      if (!isApi && reqUrl && (method === "GET" || method === "HEAD")) {
+        if (typeof url === "string") {
+          const sep = url.includes("?") ? "&" : "?";
+          url = url + sep + "_ts=" + Date.now();
+        } else if (
+          url &&
+          typeof url === "object" &&
+          typeof url.url === "string"
+        ) {
+          // Reconstrueix Request amb URL modificada
+          const sep = url.url.includes("?") ? "&" : "?";
+          const newUrl = url.url + sep + "_ts=" + Date.now();
+          url = new Request(newUrl, url);
+        }
+      }
+
+      // Capçaleres no-cache només per NO-API
+      if (!isApi) {
+        opts = { ...opts, cache: "no-store" };
+        const hdrs = { ...(opts.headers || {}) };
+        if (!("Cache-Control" in hdrs)) hdrs["Cache-Control"] = "no-cache";
+        if (!("Pragma" in hdrs)) hdrs["Pragma"] = "no-cache";
+        opts.headers = hdrs;
+      }
+      return origFetch(url, opts);
+    };
+  } catch (_) {}
+})();
+
 // Estat global
 let files = [];
 let selected = null;

@@ -1,16 +1,36 @@
 <!DOCTYPE html>
 <html lang="ca">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Rebuscada.cat - Gestió</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="admin.css?v=__NOCACHE__">
 </head>
+
 <body style="background:#f8fafc;">
   <div id="app"></div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="admin.js"></script>
+  <script>
+    // Substitueix __NOCACHE__ per un timestamp per bust de cache en temps de càrrega
+    (function () {
+      var links = document.querySelectorAll('link[rel="stylesheet"][href*="__NOCACHE__"]');
+      links.forEach(function (l) { l.href = l.href.replace('__NOCACHE__', Date.now()); });
+    })();
+  </script>
+  <script>
+    // Carrega admin.js amb cache-busting
+    (function () {
+      var s = document.createElement('script');
+      s.src = 'admin.js?v=' + Date.now();
+      document.currentScript.after(s);
+    })();
+  </script>
 </body>
+
 </html>
