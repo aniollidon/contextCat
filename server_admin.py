@@ -8,6 +8,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 import requests
 import re
+import json
+import re
+import importlib.util
 from datetime import datetime
 
 load_dotenv()
@@ -210,6 +213,9 @@ app.add_middleware(
 )
 
 
+
+class AiGenerateRequest(BaseModel):
+    prompt: str
 class MoveRequest(BaseModel):
     from_pos: int
     to_pos: int

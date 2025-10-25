@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-Script per generar llistes de paraules relacionades utilitzant un model Gemini o OpenAI.
+Script per generar llistes de paraules relacionades utilitzant l'API compatible amb OpenAI
+de https://api.chatanywhere.tech.
 
-Tria de proveïdor amb --provider (gemini | openai). Per OpenAI s'utilitza el
-model més lleuger per defecte (configurable amb --model o variable d'entorn OPENAI_MODEL).
+S'utilitza el endpoint de Chat Completions i es necessita la variable d'entorn
+CHATANYWHERE_API_KEY. Opcionalment, es pot definir el model amb --model o amb
+la variable d'entorn CHATANYWHERE_MODEL (per defecte: gpt-3.5-turbo).
+
 La sortida s'estandarditza igual que abans.
 """
 
@@ -46,29 +49,13 @@ def get_diccionari():
             print(f"✓ Diccionari generat i desat a {diccionari_json}")
     return _diccionari_cache
 
-def get_api_key(provider: str):
-    """Obté la clau API segons el proveïdor seleccionat."""
-    if provider == "gemini":
-        api_key = os.getenv("GEMINI_API") or os.getenv("GEMINI_API_KEY") or os.getenv("API_KEY")
-        if not api_key:
-            print("Error: Falta la clau de Gemini (GEMINI_API / GEMINI_API_KEY / API_KEY).")
-            sys.exit(1)
-        return api_key
-    elif provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_KEY")
-        if not api_key:
-            print("Error: Falta la clau d'OpenAI (OPENAI_API_KEY).")
-            sys.exit(1)
-        return api_key
-    elif provider == "deepseek":
-        api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_KEY")
-        if not api_key:
-            print("Error: Falta la clau de DeepSeek (DEEPSEEK_API_KEY).")
-            sys.exit(1)
-        return api_key
-    else:
-        print(f"Error: Proveïdor desconegut: {provider}")
+def get_api_key():
+    """Obté la clau API de ChatAnywhere (CHATANYWHERE_API_KEY)."""
+    api_key = os.getenv("CHATANYWHERE_API_KEY")
+    if not api_key:
+        print("Error: Falta la clau de ChatAnywhere (CHATANYWHERE_API_KEY).")
         sys.exit(1)
+    return api_key
 
 def filter_and_normalize_words(words_list, diccionari):
     """Filtra les paraules per assegurar que estan al diccionari i les converteix a lemes."""
@@ -109,8 +96,8 @@ def filter_and_normalize_words(words_list, diccionari):
     
     return filtered_words
 
-def generate_words_for_concept(concept: str, provider: str, api_key: str, model: str | None = None):
-    """Genera paraules relacionades amb un concepte utilitzant Gemini o OpenAI.
+def generate_words_for_concept(concept: str, api_key: str, model: str | None = None):
+    """Genera paraules relacionades amb un concepte utilitzant api.chatanywhere.tech.
 
     Retorna una llista de paraules o None si hi ha hagut un error.
     """
@@ -122,86 +109,32 @@ def generate_words_for_concept(concept: str, provider: str, api_key: str, model:
         "Sense comentaris, sense explicacions, sense text addicional."
     )
 
-    if provider == "gemini":
-        # Model per defecte (el mateix de l'script original)
-        gemini_model = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        headers = {"Content-Type": "application/json"}
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=60)
-            response.raise_for_status()
-            data = response.json()
-            if 'candidates' not in data or not data['candidates']:
-                print(f"Error: Resposta inesperada de Gemini per '{concept}'")
-                return None
-            text_response = data['candidates'][0]['content']['parts'][0]['text']
-        except requests.exceptions.RequestException as e:
-            print(f"Error HTTP Gemini per '{concept}': {e}")
+    # ChatAnywhere (OpenAI-compatible)
+    chatanywhere_model = model or os.getenv("CHATANYWHERE_MODEL") or "gpt-3.5-turbo"
+    url = "https://api.chatanywhere.tech/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    payload = {
+        "model": chatanywhere_model,
+        "temperature": 0.7,
+        "messages": [
+            {"role": "system", "content": "Ets un assistent lingüístic català molt estricte amb el format."},
+            {"role": "user", "content": prompt}
+        ]
+    }
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        choices = data.get("choices", [])
+        if not choices:
+            print(f"Error: Resposta inesperada de ChatAnywhere per '{concept}'")
             return None
-    elif provider == "openai":
-        # Model lleuger per defecte
-        openai_model = model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        payload = {
-            "model": openai_model,
-            "temperature": 0.7,
-            "messages": [
-                {"role": "system", "content": "Ets un assistent lingüístic català molt estricte amb el format."},
-                {"role": "user", "content": prompt}
-            ]
-        }
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=60)
-            response.raise_for_status()
-            data = response.json()
-            choices = data.get("choices", [])
-            if not choices:
-                print(f"Error: Resposta inesperada d'OpenAI per '{concept}'")
-                return None
-            text_response = choices[0]["message"]["content"]
-        except requests.exceptions.RequestException as e:
-            print(f"Error HTTP OpenAI per '{concept}': {e}")
-            return None
-    elif provider == "deepseek":
-        # DeepSeek és compatible amb l'endpoint estil OpenAI
-        deepseek_model = model or os.getenv("DEEPSEEK_MODEL") or "deepseek-chat"
-        url = "https://api.deepseek.com/v1/chat/completions"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        payload = {
-            "model": deepseek_model,
-            "temperature": 0.7,
-            "messages": [
-                {"role": "system", "content": "Ets un assistent lingüístic català. Respon només amb JSON vàlid segons instruccions."},
-                {"role": "user", "content": prompt}
-            ]
-        }
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=60)
-            response.raise_for_status()
-            data = response.json()
-            choices = data.get("choices", [])
-            if not choices:
-                print(f"Error: Resposta inesperada de DeepSeek per '{concept}'")
-                return None
-            # DeepSeek segueix esquema semblant
-            choice0 = choices[0]
-            if isinstance(choice0.get("message"), dict):
-                text_response = choice0["message"].get("content", "")
-            else:
-                text_response = choice0.get("text", "")
-        except requests.exceptions.RequestException as e:
-            print(f"Error HTTP DeepSeek per '{concept}': {e}")
-            return None
-    else:
-        print(f"Error: Proveïdor no suportat: {provider}")
+        text_response = choices[0]["message"].get("content", "")
+    except requests.exceptions.RequestException as e:
+        print(f"Error HTTP ChatAnywhere per '{concept}': {e}")
         return None
 
     # Neteja i parseja JSON
@@ -239,15 +172,15 @@ def save_ai_file(word, words_list, output_dir):
         print(f"Error guardant {output_path}: {e}")
         return False
 
-def process_word(word, provider, api_key, output_dir, model=None):
+def process_word(word, api_key, output_dir, model=None):
     """Processa una sola paraula."""
     print(f"\nGenerant paraules per: {word}")
-    words_list = generate_words_for_concept(word, provider, api_key, model=model)
+    words_list = generate_words_for_concept(word, api_key, model=model)
     
     if not words_list:
         return False
     
-    print(f"Rebudes {len(words_list)} paraules de {provider}")
+    print(f"Rebudes {len(words_list)} paraules de ChatAnywhere")
     
     # Carrega el diccionari i filtra les paraules
     diccionari = get_diccionari()
@@ -259,7 +192,7 @@ def process_word(word, provider, api_key, output_dir, model=None):
     
     return save_ai_file(word, filtered_words, output_dir)
 
-def process_folder(folder_path, provider, api_key, model=None):
+def process_folder(folder_path, api_key, model=None):
     """Processa tots els fitxers .json d'una carpeta."""
     folder = Path(folder_path)
     
@@ -289,7 +222,7 @@ def process_folder(folder_path, provider, api_key, model=None):
         if ai_file_path.exists():
             print(f"⚠ Fitxer ja existeix, saltant: {ai_file_path.name}")
             continue
-        if process_word(word, provider, api_key, ai_folder, model=model):
+    if process_word(word, api_key, ai_folder, model=model):
             success_count += 1
         else:
             print(f"✗ Error processant: {word}")
@@ -298,31 +231,30 @@ def process_folder(folder_path, provider, api_key, model=None):
     return success_count > 0
 
 def main():
-    parser = argparse.ArgumentParser(description="Genera llistes de paraules relacionades utilitzant Gemini o OpenAI")
+    parser = argparse.ArgumentParser(description="Genera llistes de paraules relacionades utilitzant api.chatanywhere.tech")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--word", "-w", help="Paraula per la qual generar paraules relacionades")
     group.add_argument("--folder", "-f", help="Carpeta amb fitxers .json per processar")
-    parser.add_argument("--provider", choices=["gemini", "openai", "deepseek"], default="gemini", help="Proveïdor del model (inclou deepseek)")
-    parser.add_argument("--model", help="Nom del model a utilitzar (opcional)")
-    
+    parser.add_argument("--model", help="Nom del model a utilitzar (opcional, per defecte gpt-3.5-turbo)")
+
     args = parser.parse_args()
-    
-    # Obté la clau API
-    api_key = get_api_key(args.provider)
-    
+
+    # Obté la clau API de ChatAnywhere
+    api_key = get_api_key()
+
     if args.word:
         # Processa una sola paraula
         output_dir = Path("data/words/ai")
         output_dir.mkdir(parents=True, exist_ok=True)
-        if process_word(args.word, args.provider, api_key, output_dir, model=args.model):
+        if process_word(args.word, api_key, output_dir, model=args.model):
             print("✓ Completat amb èxit")
         else:
             print("✗ Error en el processament")
             sys.exit(1)
-    
+
     elif args.folder:
         # Processa una carpeta
-        if process_folder(args.folder, args.provider, api_key, model=args.model):
+        if process_folder(args.folder, api_key, model=args.model):
             print("✓ Processament de carpeta completat")
         else:
             print("✗ Error en el processament de la carpeta")

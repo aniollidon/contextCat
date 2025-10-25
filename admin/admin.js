@@ -11,6 +11,7 @@ const SYNONYMS_API = `${API_BASE}/synonyms`;
 const AUTH_ENDPOINT = `${API_BASE}/auth`;
 const GENERATE_ENDPOINT = `${API_BASE}/generate`; // alternatiu
 const GENERATE_RANDOM_ENDPOINT = `${API_BASE}/generate-random`;
+const AI_GENERATE_ENDPOINT = `${API_BASE}/ai-generate`;
 // Page size per a càrrega de fragments
 const PAGE_SIZE = 300;
 // Diccionari (obertura en nova pestanya). Substituïm [PARAULA]
@@ -493,6 +494,7 @@ function openCustomTextTestModal() {
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel·la</button>
+            <button type="button" class="btn btn-outline-primary" id="open-ai-search-btn">Cerca AI</button>
             <button type="button" class="btn btn-primary" id="create-custom-test-btn">Crear Test</button>
           </div>
         </div>
@@ -591,12 +593,106 @@ function openCustomTextTestModal() {
     refreshTestOverlayIfVisible("text");
   };
 
+  // Botó per obrir el modal de cerca AI
+  document.getElementById("open-ai-search-btn").onclick = () => {
+    openAiSearchModal(textarea);
+  };
+
   // Neteja el modal del DOM quan es tanca
   modalEl.addEventListener("hidden.bs.modal", () => {
     modalEl.remove();
   });
 
   modal.show();
+}
+
+// Modal flotant per fer una cerca AI i omplir el textarea del test personalitzat
+function openAiSearchModal(targetTextarea) {
+  const defaultPrompt =
+    "Genera una llista de 100 noms i verbs únics en català relacionades amb el concepte de";
+
+  const aiModalHtml = `
+    <div class="modal fade" id="aiSearchModal" tabindex="-1" aria-labelledby="aiSearchModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="aiSearchModalLabel">Cerca AI</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tanca"></button>
+          </div>
+          <div class="modal-body">
+            <label class="form-label">Prompt</label>
+            <textarea class="form-control" id="ai-prompt-input" rows="4">${defaultPrompt}</textarea>
+            <div class="form-text">Modifica el prompt per especificar el concepte abans d'enviar.</div>
+            <div id="ai-error" class="text-danger mt-2" style="display:none;"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tanca</button>
+            <button type="button" class="btn btn-primary" id="ai-send-btn">ENVIA</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  // Elimina si existeix
+  const old = document.getElementById("aiSearchModal");
+  if (old) old.remove();
+  document.body.insertAdjacentHTML("beforeend", aiModalHtml);
+
+  const aiEl = document.getElementById("aiSearchModal");
+  const aiModal = new bootstrap.Modal(aiEl);
+  const promptEl = document.getElementById("ai-prompt-input");
+  const errorEl = document.getElementById("ai-error");
+  const sendBtn = document.getElementById("ai-send-btn");
+
+  let sending = false;
+  sendBtn.onclick = async () => {
+    if (sending) return;
+    const prompt = (promptEl.value || "").trim();
+    errorEl.style.display = "none";
+    errorEl.textContent = "";
+
+    // Comprova que s'ha modificat el prompt
+    if (prompt === defaultPrompt) {
+      errorEl.textContent = "Has de modificar el prompt abans d'enviar.";
+      errorEl.style.display = "block";
+      return;
+    }
+
+    try {
+      sending = true;
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Enviant...";
+      const res = await fetch(AI_GENERATE_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Error" }));
+        throw new Error(err.detail || "Error en la generació AI");
+      }
+      const data = await res.json();
+      const words = Array.isArray(data.paraules) ? data.paraules : [];
+      if (!words.length) throw new Error("La resposta AI no conté paraules");
+
+      // Omple el textarea amb les paraules (una per línia) i neteja qualsevol contingut anterior
+      targetTextarea.value = words.join("\n");
+      // Força l'actualització del comptador i la neteja
+      targetTextarea.dispatchEvent(new Event("input"));
+
+      aiModal.hide();
+    } catch (e) {
+      errorEl.textContent = e.message || "Error desconegut";
+      errorEl.style.display = "block";
+    } finally {
+      sending = false;
+      sendBtn.disabled = false;
+      sendBtn.textContent = "ENVIA";
+    }
+  };
+
+  aiEl.addEventListener("hidden.bs.modal", () => aiEl.remove());
+  aiModal.show();
 }
 
 // Funció auxiliar per obtenir el rànquing actual
