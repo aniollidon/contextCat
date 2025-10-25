@@ -7,7 +7,7 @@ load_dotenv()
 client = OpenAI(
     # defaults to os.environ.get("OPENAI_API_KEY")
     api_key=os.environ.get("CHATANYWHERE_API_KEY"),
-    base_url="api.chatanywhere.org/v1"
+    base_url="https://api.chatanywhere.org/v1"
 )
 
 def gpt_api(messages: list, model: str = "gpt-3.5-turbo"):
