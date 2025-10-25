@@ -70,6 +70,7 @@ let comments = {}; // Estat dels comentaris del fitxer actual {global: "", words
 let customSynonymsData = null; // Dades de test de sinònims personalitzat (temporal)
 let customTextData = null; // Dades de test de text personalitzat (temporal)
 let showOnlyPending = false; // filtre de fitxers no validats
+let showOnlyValidated = false; // filtre de fitxers validats
 let showOnlyFavorites = false; // filtre de fitxers preferits
 let autoSaveTimer = null; // temporitzador per auto-desat
 const AUTO_SAVE_DELAY = 800; // ms després de l'últim canvi de drag
@@ -193,7 +194,11 @@ function renderApp() {
                 <input type="checkbox" id="filter-pending" class="form-check-input" />
                 <label for="filter-pending" id="filter-pending-label" class="form-check-label" style="cursor:pointer;">Pendents</label>
               </div>
-              <div class="d-flex align-items-center">
+              <div class="d-flex align-items-center gap-2">
+                <input type="checkbox" id="filter-validated" class="form-check-input" />
+                <label for="filter-validated" id="filter-validated-label" class="form-check-label" style="cursor:pointer;">Validats</label>
+              </div>
+              <div class="d-flex align-items-center gap-2">
                 <input type="checkbox" id="filter-favorites" class="form-check-input" />
                 <label for="filter-favorites" id="filter-favorites-label" class="form-check-label" style="cursor:pointer;">Preferits</label>
               </div>
@@ -279,6 +284,7 @@ function bindStaticEvents() {
   const testBtn = document.getElementById("show-test");
   const addNewBtn = document.getElementById("add-new-word-btn");
   const filterChk = document.getElementById("filter-pending");
+  const validatedChk = document.getElementById("filter-validated");
   const favoritesChk = document.getElementById("filter-favorites");
   const settingsBtn = document.getElementById("settings-btn");
   const difficultySelector = document.getElementById("difficulty-selector");
@@ -287,6 +293,23 @@ function bindStaticEvents() {
     filterChk.checked = showOnlyPending;
     filterChk.onchange = () => {
       showOnlyPending = filterChk.checked;
+      // Si activem pendents, desactivem validats
+      if (showOnlyPending && validatedChk) {
+        showOnlyValidated = false;
+        validatedChk.checked = false;
+      }
+      renderFileList();
+    };
+  }
+  if (validatedChk) {
+    validatedChk.checked = showOnlyValidated;
+    validatedChk.onchange = () => {
+      showOnlyValidated = validatedChk.checked;
+      // Si activem validats, desactivem pendents
+      if (showOnlyValidated && filterChk) {
+        showOnlyPending = false;
+        filterChk.checked = false;
+      }
       renderFileList();
     };
   }
@@ -1409,6 +1432,7 @@ function renderFileList() {
     const isValidated = !!validationStatus; // true if 'validated' or 'approved'
     const isFavorite = !!favorites[f];
     if (showOnlyPending && isValidated) return;
+    if (showOnlyValidated && !isValidated) return;
     if (showOnlyFavorites && !isFavorite) return;
     const li = document.createElement("li");
     li.className = "list-item" + (selected === f ? " selected" : "");
@@ -1468,7 +1492,10 @@ function renderFileList() {
           }
           // Re-renderitza la llista per actualitzar l'aparença
           renderFileList();
+          // Si estem filtrant 'Pendents' i ara s'ha validat, pot desaparèixer
           if (showOnlyPending && newStatus) renderFileList();
+          // Si estem filtrant 'Validats' i ara ha passat a no validat, pot desaparèixer
+          if (showOnlyValidated && !newStatus) renderFileList();
         })
         .catch(() => {
           alert("Error desant validació");
