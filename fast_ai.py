@@ -7,7 +7,7 @@ load_dotenv()
 client = OpenAI(
     # defaults to os.environ.get("OPENAI_API_KEY")
     api_key=os.environ.get("CHATANYWHERE_API_KEY"),
-    base_url="https://api.chatanywhere.tech/v1"
+    base_url="api.chatanywhere.org/v1"
 )
 
 def gpt_api(messages: list, model: str = "gpt-3.5-turbo"):
@@ -22,7 +22,7 @@ def fast_ai(content: str):
         {"role": "system", "content": "Ets un assistent lingüístic català molt estricte amb el format."},
         {"role": "user", "content": content + base_content}
     ]
-    res = gpt_api(messages, model="gpt-5")
+    res = gpt_api(messages, model="gpt-4o")
     return res
 
 if __name__ == "__main__":
