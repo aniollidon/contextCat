@@ -22,7 +22,7 @@ def fast_ai(content: str):
         {"role": "system", "content": "Ets un assistent lingüístic català molt estricte amb el format."},
         {"role": "user", "content": content + base_content}
     ]
-    res = gpt_api(messages, model="gpt-4o")
+    res = gpt_api(messages, model="gpt-5-mini-ca")
     return res
 
 if __name__ == "__main__":
