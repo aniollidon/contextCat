@@ -10,8 +10,9 @@ import requests
 import re
 import json
 import re
-import importlib.util
+from fast_ai import fast_ai as run_fast_ai
 from datetime import datetime
+import sys
 
 load_dotenv()
 
@@ -599,6 +600,39 @@ def generate_ranking(req: GenerateRequest, _: None = Depends(require_auth)):
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(ranking, f, ensure_ascii=False, indent=2)
     return {"ok": True, "filename": filename, "total": len(ranking)}
+
+@app.post("/api/ai-generate")
+def ai_generate(req: AiGenerateRequest, _: None = Depends(require_auth)):
+    """Endpoint que crida fast_ai.fast_ai per generar paraules via AI i retorna {paraules: [...]}"""
+    prompt = (req.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=422, detail="Prompt buit")
+
+    try:
+        raw = run_fast_ai(prompt)
+        if not isinstance(raw, str):
+            raise RuntimeError("Resposta AI inesperada")
+
+        cleaned = re.sub(r"^```json\s*", "", raw, flags=re.MULTILINE)
+        cleaned = re.sub(r"^```\s*", "", cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.MULTILINE).strip()
+
+        data = json.loads(cleaned)
+        paraules = data.get("paraules")
+        if not isinstance(paraules, list):
+            raise ValueError("JSON sense clau 'paraules' vàlida")
+
+        words = []
+        for w in paraules:
+            if isinstance(w, str):
+                s = w.strip()
+                if s:
+                    words.append(s)
+        return {"paraules": words}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processant AI: {e}")
 
 # Cache globals per evitar recàrregues costoses
 _DICC = None
