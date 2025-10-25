@@ -12,6 +12,7 @@ import json
 import re
 from fast_ai import fast_ai as run_fast_ai
 from datetime import datetime
+import logging
 import sys
 
 load_dotenv()
@@ -609,13 +610,16 @@ def ai_generate(req: AiGenerateRequest, _: None = Depends(require_auth)):
         raise HTTPException(status_code=422, detail="Prompt buit")
 
     try:
+        logging.info("/api/ai-generate: prompt len=%d, sample=%r", len(prompt), prompt[:200])
         raw = run_fast_ai(prompt)
         if not isinstance(raw, str):
             raise RuntimeError("Resposta AI inesperada")
 
+        logging.info("/api/ai-generate: raw len=%d, sample=%r", len(raw), raw[:200])
         cleaned = re.sub(r"^```json\s*", "", raw, flags=re.MULTILINE)
         cleaned = re.sub(r"^```\s*", "", cleaned, flags=re.MULTILINE)
         cleaned = re.sub(r"\s*```$", "", cleaned, flags=re.MULTILINE).strip()
+        logging.info("/api/ai-generate: cleaned sample=%r", cleaned[:200])
 
         data = json.loads(cleaned)
         paraules = data.get("paraules")
@@ -628,10 +632,12 @@ def ai_generate(req: AiGenerateRequest, _: None = Depends(require_auth)):
                 s = w.strip()
                 if s:
                     words.append(s)
+        logging.info("/api/ai-generate: parsed words=%d", len(words))
         return {"paraules": words}
     except HTTPException:
         raise
     except Exception as e:
+        logging.exception("/api/ai-generate: error: %s", e)
         raise HTTPException(status_code=500, detail=f"Error processant AI: {e}")
 
 # Cache globals per evitar recàrregues costoses
