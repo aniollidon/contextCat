@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 from diccionari import Diccionari
+from diccionari_full import DiccionariFull
 
 app = FastAPI()
 
@@ -57,6 +58,31 @@ RANKING_DICCIONARI = {}
 FORMES_CANONIQUES = []
 TOTAL_PARAULES_RANKING = 0
 REBUSCADA = ""
+
+# Diccionari complet (sense filtre) en memòria (lazy)
+_DICCIONARI_FULL = None
+FULL_FREQ_MIN = int(os.getenv("FULL_FREQ_MIN", "20"))
+
+def get_diccionari_full() -> Optional[DiccionariFull]:
+    """Carrega una sola vegada el diccionari complet des de data/diccionari_full.pkl o el genera si no existeix.
+    Evita recàrregues per petició.
+    """
+    global _DICCIONARI_FULL
+    if _DICCIONARI_FULL is not None:
+        return _DICCIONARI_FULL
+    try:
+        path = os.path.join("data", DiccionariFull.FULL_CACHE_FILE)
+        if os.path.exists(path):
+            _DICCIONARI_FULL = DiccionariFull.load(path)
+        else:
+            # Construeix i desa perquè futurs arrencs siguin més ràpids
+            _DICCIONARI_FULL = DiccionariFull.obtenir_diccionari_full(use_cache=False)
+            _DICCIONARI_FULL.save(path)
+        logger.info("Diccionari complet carregat (%d lemes)", len(_DICCIONARI_FULL.lemma_to_forms))
+    except Exception as e:
+        logger.exception("No s'ha pogut carregar/generar diccionari complet: %s", e)
+        _DICCIONARI_FULL = None
+    return _DICCIONARI_FULL
 
 def carregar_ranking(rebuscada: str):
     """Carrega el rànquing per una paraula específica"""
@@ -157,11 +183,17 @@ async def guess(request: GuessRequest):
                 total_paraules=total_paraules,
                 es_correcta=es_correcta_directe
             )
-        logger.info(f"GUESS: '{paraula_introduida}' -> INVÀLIDA (objectiu: {paraula_objectiu})")
-        raise HTTPException(
-            status_code=400,
-            detail="Disculpa, aquesta paraula no és vàlida."
-        )
+        # Proporciona motiu detallat utilitzant el diccionari complet (cachejat)
+        reason = None
+        dic_full = get_diccionari_full()
+        if dic_full is not None:
+            try:
+                reason = dic_full.explain_invalid(paraula_introduida, FULL_FREQ_MIN)
+            except Exception:
+                reason = None
+        msg = reason or "Disculpa, aquesta paraula no és vàlida."
+        logger.info(f"GUESS: '{paraula_introduida}' -> INVÀLIDA (objectiu: {paraula_objectiu}) | reason={msg}")
+        raise HTTPException(status_code=400, detail=msg)
     rank = ranking_diccionari.get(forma_canonica)
     if rank is None:
         logger.info(f"GUESS: '{paraula_introduida}' ({forma_canonica}) -> NO TROBADA (objectiu: {paraula_objectiu})")
