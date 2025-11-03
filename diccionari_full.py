@@ -352,7 +352,7 @@ class DiccionariFull:
         # Si no existeix al diccionari complet
         w = self._normalitzar_paraula(paraula)
         if w not in self.forma_to_lemmas:
-            return "Disculpa, la paraula no existeix al diccionari català."
+            return "Disculpa, aquesta paraula no està ben escrita."
         # 1) Lema exclòs?
         excl = getattr(self, "excluded_lemmas", set())
         lemes_all = set(self._forma_to_lemmas_set.get(w, set()))
