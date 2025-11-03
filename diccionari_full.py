@@ -317,9 +317,9 @@ class DiccionariFull:
             # primera per major nombre i, si empat, ordre alfabètic
             cat2 = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
             label = self._cat2_label(cat2)
-            return f"Aquesta paraula no és vàlida ja que és {label}."
+            return f"Aquesta paraula és {label}. Introdueix un nom o verb comú."
         # Sense categories (cas estrany)
-        return "Aquesta paraula no és vàlida per categoria."
+        return "Aquesta paraula no és vàlida. Només es permeten noms i verbs comuns."
 
     def reason_too_uncommon(self, paraula: str, freq_min: int) -> Optional[str]:
         """
@@ -338,7 +338,7 @@ class DiccionariFull:
         for l in lemes:
             best = max(best, int(self.lemma_freq.get(l, 0)))
         if best < freq_min:
-            return "Aquesta paraula no és vàlida ja que és massa poc comuna."
+            return "Aquesta paraula no participa del joc, busca'n una de més comuna."
         return None
 
     def explain_invalid(self, paraula: str, freq_min: int) -> Optional[str]:
@@ -352,14 +352,14 @@ class DiccionariFull:
         # Si no existeix al diccionari complet
         w = self._normalitzar_paraula(paraula)
         if w not in self.forma_to_lemmas:
-            return "Aquesta paraula no existeix al diccionari."
+            return "Aquesta paraula no existeix al diccionari català. Assegura't que està ben escrita."
         # 1) Lema exclòs?
         excl = getattr(self, "excluded_lemmas", set())
         lemes_all = set(self._forma_to_lemmas_set.get(w, set()))
         if w in lemes_all:
             lemes_all = {w}
         if lemes_all and all(l in excl for l in lemes_all):
-            return "Aquesta paraula no és vàlida perquè el seu lema està exclòs."
+            return "Aquesta paraula no és vàlida. Només s'accepten els noms i verbs comuns de la normativa actual."
         msg = self.reason_invalid_category(w)
         if msg:
             return msg
