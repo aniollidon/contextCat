@@ -277,25 +277,19 @@ async def donar_pista(request: PistaRequest):
         inici_rang = max(0, target_pos - variacio)
         fi_rang = max(target_pos + variacio, millor_ranking - 1)
     
-    # Buscar una paraula adequada
+    # Buscar una paraula adequada (prioritza freqüència de lema dins del rang)
     paraula_pista = None
-    max_iteracions = 1000
-    iteracio = 0
-    
-    while iteracio < max_iteracions and paraula_pista is None:
-        # Escollir una posició aleatòria dins el rang
-        index_pista = random.randint(inici_rang, fi_rang)
-        
-        if index_pista < len(ranking_invers):
-            paraula_candidata = ranking_invers[index_pista]
-            
-            # Comprovar que no s'hagi provat ja i que no sigui la solució
-            if (paraula_candidata not in formes_canoniques_provades and 
-                paraula_candidata != paraula_objectiu):
-                paraula_pista = paraula_candidata
-                break
-        
-        iteracio += 1
+    try:
+        subllista = ranking_invers[inici_rang:fi_rang + 1] if fi_rang >= inici_rang else []
+        candidats = [w for w in subllista if w not in formes_canoniques_provades and w != paraula_objectiu]
+        if candidats:
+            # Tria el candidat amb més freqüència al diccionari; si empata, el de millor rànquing (valor més petit), i després ordre alfabètic
+            paraula_pista = max(
+                candidats,
+                key=lambda w: (dicc.freq_lema(w), -ranking_diccionari.get(w, total_paraules), w)
+            )
+    except Exception:
+        paraula_pista = None
     
     # Si no trobem cap paraula adequada, buscar qualsevol paraula no provada
     if paraula_pista is None:
