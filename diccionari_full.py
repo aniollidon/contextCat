@@ -184,28 +184,48 @@ class DiccionariFull:
         # 2) Freqüències per lema
         lemma_freq = cls._obtenir_freq_lemes()
 
-        # 3) Determina lema principal per forma (freq més alta; si empat, ordre alfabètic)
+        # 3) Aplica exclusions (si existeixen) sobre FORMES i marca LEMES exclosos
+        forms_exc, lemmas_exc = cls._load_exclusions_json()
+        if forms_exc:
+            for f in list(forms_exc):
+                lems = forma_to_lemmas_set.get(f)
+                if not lems:
+                    continue
+                for l in lems:
+                    if l in lemma_to_forms_set:
+                        lemma_to_forms_set[l].discard(f)
+                forma_to_lemmas_set.pop(f, None)
+
+        excluded_lemmas_set = set(lemmas_exc or [])
+
+        # 4) Determina lema principal per forma (freq més alta; si empat, ordre alfabètic)
         forma_primary: Dict[str, str] = {}
         for forma, lemes in forma_to_lemmas_set.items():
             if not lemes:
                 continue
+            # Evita preferir un lema exclòs quan hi ha alternativa
+            candidates = [l for l in lemes if l not in excluded_lemmas_set]
+            pool = candidates if candidates else list(lemes)
             best = None
             best_freq = -1
-            for l in lemes:
+            for l in pool:
                 f = lemma_freq.get(l, 0)
                 if f > best_freq or (f == best_freq and (best is None or l < best)):
                     best = l
                     best_freq = f
             if best is None:
-                best = sorted(lemes)[0]
+                best = sorted(pool)[0]
             forma_primary[forma] = best
 
-        # 4) Converteix a tuples per reduir overhead i millorar pickling
+        # 5) Converteix a tuples per reduir overhead i millorar pickling
         forma_to_lemmas = {k: tuple(sorted(v)) for k, v in forma_to_lemmas_set.items()}
         lemma_to_forms = {k: tuple(sorted(v)) for k, v in lemma_to_forms_set.items()}
         lemma_categories = {k: tuple(sorted(v)) for k, v in lemma_categories_set.items()}
 
         inst = cls(forma_to_lemmas, lemma_to_forms, lemma_categories, lemma_freq, forma_primary)
+
+        # Guarda llistes d'exclosos a la instància (no esborrem els lemes, però els marquem invàlids)
+        inst.excluded_lemmas = excluded_lemmas_set
 
         # Desa a disc
         with open(cache_path, "wb") as f:
@@ -264,6 +284,7 @@ class DiccionariFull:
             "is_inflection": is_inflection,
             "lemma_categories": lcats,
             "lemma_freq": lfreq,
+            "excluded_lemmas": sorted(list(getattr(self, "excluded_lemmas", set()) & set(lemes))) if lemes else [],
         }
 
     def _cat2_label(self, cat2: str) -> str:
@@ -276,6 +297,9 @@ class DiccionariFull:
         if w in lemes:
             # només el lema propi
             lemes = {w}
+        # Ignora lemes exclosos per decidir la categoria
+        excl = getattr(self, "excluded_lemmas", set())
+        lemes = {l for l in lemes if l not in excl}
         if not lemes:
             return None  # Desconeguda: que ho gestioni qui crida
         # Comprova si algun lema és permès
@@ -305,6 +329,9 @@ class DiccionariFull:
         lemes = set(self._forma_to_lemmas_set.get(w, set()))
         if w in lemes:
             lemes = {w}
+        # Ignora lemes exclosos per a la comprovació de freqüència
+        excl = getattr(self, "excluded_lemmas", set())
+        lemes = {l for l in lemes if l not in excl}
         if not lemes:
             return None
         best = 0
@@ -317,15 +344,22 @@ class DiccionariFull:
     def explain_invalid(self, paraula: str, freq_min: int) -> Optional[str]:
         """
         Dona una explicació curta si la paraula no és acceptable pel joc, ordenant per prioritat:
-        1) Categoria no permesa
-        2) Freqüència massa baixa
+        1) Lema exclòs explícitament
+        2) Categoria no permesa
+        3) Freqüència massa baixa
         Retorna None si no hi ha motiu d'invalidesa (segons aquests criteris).
         """
         # Si no existeix al diccionari complet
         w = self._normalitzar_paraula(paraula)
         if w not in self.forma_to_lemmas:
             return "Aquesta paraula no existeix al diccionari."
-
+        # 1) Lema exclòs?
+        excl = getattr(self, "excluded_lemmas", set())
+        lemes_all = set(self._forma_to_lemmas_set.get(w, set()))
+        if w in lemes_all:
+            lemes_all = {w}
+        if lemes_all and all(l in excl for l in lemes_all):
+            return "Aquesta paraula no és vàlida perquè el seu lema està exclòs."
         msg = self.reason_invalid_category(w)
         if msg:
             return msg
@@ -333,6 +367,34 @@ class DiccionariFull:
         if msg:
             return msg
         return None
+
+    # ------------------------------ Exclusions helpers ------------------------------
+    @classmethod
+    def _load_exclusions_json(cls) -> Tuple[Set[str], Set[str]]:
+        """Llegeix data/exclusions.json si existeix i retorna (formes, lemes).
+        Format esperat: {"lemmas": [...], "formes": [...]};
+        Compatibilitat: si és una llista, es considera llista de lemes.
+        """
+        path = os.path.join(cls.DATA_DIR, "exclusions.json")
+        if not os.path.exists(path):
+            return set(), set()
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            return set(), set()
+        forms: Set[str] = set()
+        lemmas: Set[str] = set()
+        if isinstance(data, dict):
+            forml = data.get("formes") or []
+            leml = data.get("lemmas") or []
+            if isinstance(forml, list):
+                forms = {str(x).lower() for x in forml}
+            if isinstance(leml, list):
+                lemmas = {str(x).lower() for x in leml}
+        elif isinstance(data, list):
+            lemmas = {str(x).lower() for x in data}
+        return forms, lemmas
 
 
 if __name__ == "__main__":

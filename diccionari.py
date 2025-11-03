@@ -121,6 +121,10 @@ class Diccionari:
                 lemes_valids = set(canoniques.keys())
                 mapping_multi_filtrat = {f: {l for l in lems if l in lemes_valids} for f, lems in mapping_multi.items()}
                 lema_cats_filtrat = {l: lema_cats.get(l, set()) for l in lemes_valids}
+                # Aplica exclusions (formes/lemes) si existeix data/exclusions.json
+                formes_exc, lemes_exc = cls._load_exclusions_json()
+                if formes_exc or lemes_exc:
+                    cls._apply_exclusions_to_data(mapping, canoniques, mapping_multi_filtrat, lema_cats_filtrat, freq_filtrat, formes_exc, lemes_exc)
                 return cls(mapping, canoniques, freq_filtrat, mapping_multi_filtrat, lema_cats_filtrat)
             # Si n'hi ha més, cal adaptar-ho
             raise NotImplementedError("Només es suporta un diccionari per ara.")
@@ -142,6 +146,10 @@ class Diccionari:
             lemes_valids = set(canoniques.keys())
             mapping_multi_filtrat = {f: {l for l in lems if l in lemes_valids} for f, lems in mapping_multi.items()}
             lema_cats_filtrat = {l: lema_cats.get(l, set()) for l in lemes_valids}
+            # Aplica exclusions (formes/lemes) si existeix data/exclusions.json
+            formes_exc, lemes_exc = cls._load_exclusions_json()
+            if formes_exc or lemes_exc:
+                cls._apply_exclusions_to_data(mapping, canoniques, mapping_multi_filtrat, lema_cats_filtrat, freq_filtrat, formes_exc, lemes_exc)
             return cls(mapping, canoniques, freq_filtrat, mapping_multi_filtrat, lema_cats_filtrat)
         raise NotImplementedError("Només es suporta un diccionari per ara.")
 
@@ -215,3 +223,83 @@ class Diccionari:
         forma_canonica = self.mapping_flexions[paraula_norm]
         es_flexio = paraula_norm != forma_canonica
         return forma_canonica, es_flexio
+
+    # ------------------------------ Exclusions (formes i lemes) ------------------------------
+    @classmethod
+    def _load_exclusions_json(cls) -> Tuple[Set[str], Set[str]]:
+        """Llegeix data/exclusions.json si existeix i retorna (formes, lemes).
+        Format nou esperat: {"lemmas": [...], "formes": [...]}.
+        Compatibilitat: si és una llista, es considera llista de lemes.
+        """
+        path = os.path.join(cls.DATA_DIR, "exclusions.json")
+        if not os.path.exists(path):
+            return set(), set()
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            return set(), set()
+        formas: Set[str] = set()
+        lemas: Set[str] = set()
+        if isinstance(data, dict):
+            forml = data.get('formes') or []
+            leml = data.get('lemmas') or []
+            if isinstance(forml, list):
+                formas = {str(x).lower() for x in forml}
+            if isinstance(leml, list):
+                lemas = {str(x).lower() for x in leml}
+        elif isinstance(data, list):
+            lemas = {str(x).lower() for x in data}
+        return formas, lemas
+
+    @staticmethod
+    def _apply_exclusions_to_data(
+        mapping_flexions: Dict[str, str],
+        canoniques: Dict[str, Set[str]],
+        mapping_flexions_multi: Dict[str, Set[str]],
+        lema_categories: Dict[str, Set[str]],
+        freq: Dict[str, int],
+        forms_to_exclude: Set[str],
+        lemmas_to_exclude: Set[str],
+    ) -> None:
+        # 1) Exclou lemes
+        if lemmas_to_exclude:
+            # Elimina lemes de canòniques, categories i freq
+            for l in lemmas_to_exclude:
+                canoniques.pop(l, None)
+                lema_categories.pop(l, None)
+                freq.pop(l, None)
+            # Elimina lemes de mapping_flexions_multi
+            for f in list(mapping_flexions_multi.keys()):
+                lemes = mapping_flexions_multi[f]
+                before = len(lemes)
+                lemes.difference_update(lemmas_to_exclude)
+                if not lemes:
+                    del mapping_flexions_multi[f]
+                # Actualitza mapping_flexions
+                if f in mapping_flexions and mapping_flexions[f] in lemmas_to_exclude:
+                    if f in mapping_flexions_multi and mapping_flexions_multi[f]:
+                        mapping_flexions[f] = next(iter(mapping_flexions_multi[f]))
+                    else:
+                        mapping_flexions.pop(f, None)
+
+        # 2) Exclou formes
+        if forms_to_exclude:
+            for f in forms_to_exclude:
+                mapping_flexions.pop(f, None)
+                mapping_flexions_multi.pop(f, None)
+            # Treu formes de canòniques; elimina lemes que quedin buits
+            for l in list(canoniques.keys()):
+                s = canoniques[l]
+                if s & forms_to_exclude:
+                    s.difference_update(forms_to_exclude)
+                    if not s:
+                        del canoniques[l]
+                        lema_categories.pop(l, None)
+                        freq.pop(l, None)
+            # Neteja mapping_flexions inconsistent
+            for f in list(mapping_flexions.keys()):
+                if f not in mapping_flexions_multi:
+                    del mapping_flexions[f]
+                elif mapping_flexions[f] not in mapping_flexions_multi[f]:
+                    mapping_flexions[f] = next(iter(mapping_flexions_multi[f]))
