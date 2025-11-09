@@ -224,8 +224,8 @@ def process_folder(folder_path, api_key, model=None):
             continue
     if process_word(word, api_key, ai_folder, model=model):
             success_count += 1
-        else:
-            print(f"✗ Error processant: {word}")
+    else:
+        print(f"✗ Error processant: {word}")
     
     print(f"\nProcessament completat: {success_count}/{len(json_files)} fitxers generats")
     return success_count > 0
