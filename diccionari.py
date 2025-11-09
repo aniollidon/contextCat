@@ -18,14 +18,11 @@ class Diccionari:
     ]
 
     def __init__(self,
-                 mapping_flexions: Dict[str, str],
+                 mapping_flexions_multi: Dict[str, Set[str]],
                  canoniques: Dict[str, Set[str]],
                  freq: Optional[Dict[str, int]] = None,
-                 mapping_flexions_multi: Optional[Dict[str, Set[str]]] = None,
                  lema_categories: Optional[Dict[str, Set[str]]] = None):
-        # mapping_flexions es manté per compatibilitat: flexió -> un lema principal
-        self.mapping_flexions = mapping_flexions
-        self.mapping_flexions_multi = mapping_flexions_multi or {k: {v} for k, v in mapping_flexions.items()}
+        self.mapping_flexions_multi = mapping_flexions_multi  # flexió -> conjunt de lemes
         self.canoniques = canoniques  # lema base -> conjunt de flexions
         self.lema_categories = lema_categories or defaultdict(set)
         self.freq = freq or {}
@@ -44,13 +41,12 @@ class Diccionari:
         return categoria.startswith(('NC', 'VM'))
 
     @classmethod
-    def processar_diccionari(cls, contingut: str) -> Tuple[Dict[str, str], Dict[str, Set[str]], Dict[str, Set[str]], Dict[str, Set[str]]]:
+    def processar_diccionari(cls, contingut: str) -> Tuple[Dict[str, Set[str]], Dict[str, Set[str]], Dict[str, Set[str]]]:
         """Processa el text del diccionari permetent múltiples lemes per forma.
 
         Uneix lemes numerats (lema1, lema2) al lema base per poder aplicar freqüències,
-        però conserva les múltiples lectures (p.ex. nom i verb) via mapping_flexions_multi.
+        i permet múltiples lectures (p.ex. nom i verb) via mapping_flexions_multi.
         """
-        mapping_flexions: Dict[str, str] = {}
         mapping_flexions_multi: Dict[str, Set[str]] = defaultdict(set)
         formes_canoniques: defaultdict[str, Set[str]] = defaultdict(set)
         lema_categories: Dict[str, Set[str]] = defaultdict(set)
@@ -72,10 +68,8 @@ class Diccionari:
             lema_base = normalitzar_lema(lema_original)
             lema_categories[lema_base].add(categoria[:2])
             mapping_flexions_multi[paraula].add(lema_base)
-            if paraula not in mapping_flexions:
-                mapping_flexions[paraula] = lema_base
             formes_canoniques[lema_base].add(paraula)
-        return mapping_flexions, dict(formes_canoniques), dict(mapping_flexions_multi), dict(lema_categories)
+        return dict(mapping_flexions_multi), dict(formes_canoniques), dict(lema_categories)
 
     @classmethod
     def obtenir_freq_lemes(cls, freq_url: Optional[str] = None) -> Dict[str, int]:
@@ -98,9 +92,14 @@ class Diccionari:
         return freq_lemes
 
     @classmethod
-    def filtrar_diccionari_per_frequencia(cls, mapping_flexions, canoniques, freq_lemes, freq_min=20):
+    def filtrar_diccionari_per_frequencia(cls, mapping_flexions_multi, canoniques, freq_lemes, freq_min=20):
         canoniques_filtrades = {lema: flexions for lema, flexions in canoniques.items() if freq_lemes.get(lema, 0) >= freq_min}
-        mapping_filtrat = {flexio: canonic for flexio, canonic in mapping_flexions.items() if canonic in canoniques_filtrades}
+        # Filtra mapping_flexions_multi per mantenir només lemes vàlids
+        mapping_filtrat = {}
+        for flexio, lemes in mapping_flexions_multi.items():
+            lemes_valids = {l for l in lemes if l in canoniques_filtrades}
+            if lemes_valids:
+                mapping_filtrat[flexio] = lemes_valids
         freq_filtrat = {lema: freq_lemes.get(lema, 0) for lema in canoniques_filtrades}
         print(f"Paraules filtrades per freqüència >= {freq_min}: {len(mapping_filtrat)} flexions, {len(canoniques_filtrades)} lemes.")
         return mapping_filtrat, canoniques_filtrades, freq_filtrat
@@ -115,17 +114,16 @@ class Diccionari:
                 diccionaris_data = pickle.load(f)
             # Només un diccionari
             if len(diccionaris_data) == 1:
-                mapping, canoniques, mapping_multi, lema_cats = list(diccionaris_data.values())[0]
+                mapping_multi, canoniques, lema_cats = list(diccionaris_data.values())[0]
                 freq_lemes = cls.obtenir_freq_lemes()
-                mapping, canoniques, freq_filtrat = cls.filtrar_diccionari_per_frequencia(mapping, canoniques, freq_lemes, freq_min)
+                mapping_multi_filtrat, canoniques, freq_filtrat = cls.filtrar_diccionari_per_frequencia(mapping_multi, canoniques, freq_lemes, freq_min)
                 lemes_valids = set(canoniques.keys())
-                mapping_multi_filtrat = {f: {l for l in lems if l in lemes_valids} for f, lems in mapping_multi.items()}
                 lema_cats_filtrat = {l: lema_cats.get(l, set()) for l in lemes_valids}
                 # Aplica exclusions (formes/lemes) si existeix data/exclusions.json
                 formes_exc, lemes_exc = cls._load_exclusions_json()
                 if formes_exc or lemes_exc:
-                    cls._apply_exclusions_to_data(mapping, canoniques, mapping_multi_filtrat, lema_cats_filtrat, freq_filtrat, formes_exc, lemes_exc)
-                return cls(mapping, canoniques, freq_filtrat, mapping_multi_filtrat, lema_cats_filtrat)
+                    cls._apply_exclusions_to_data(canoniques, mapping_multi_filtrat, lema_cats_filtrat, freq_filtrat, formes_exc, lemes_exc)
+                return cls(mapping_multi_filtrat, canoniques, freq_filtrat, lema_cats_filtrat)
             # Si n'hi ha més, cal adaptar-ho
             raise NotImplementedError("Només es suporta un diccionari per ara.")
         print("Generant diccionaris des de les fonts...")
@@ -133,31 +131,29 @@ class Diccionari:
         for nom, url in cls.DICCIONARI_URLS:
             print(f"Descarregant {nom}...")
             contingut = cls.descarregar_diccionari(url)
-            mapping, canoniques, mapping_multi, lema_cats = cls.processar_diccionari(contingut)
-            diccionaris_data[nom] = (mapping, canoniques, mapping_multi, lema_cats)
+            mapping_multi, canoniques, lema_cats = cls.processar_diccionari(contingut)
+            diccionaris_data[nom] = (mapping_multi, canoniques, lema_cats)
         with open(cache_file_path, 'wb') as f:
             print(f"Desant diccionaris al cache: {cache_file_path}")
             pickle.dump(diccionaris_data, f)
         # Només un diccionari
         if len(diccionaris_data) == 1:
-            mapping, canoniques, mapping_multi, lema_cats = list(diccionaris_data.values())[0]
+            mapping_multi, canoniques, lema_cats = list(diccionaris_data.values())[0]
             freq_lemes = cls.obtenir_freq_lemes()
-            mapping, canoniques, freq_filtrat = cls.filtrar_diccionari_per_frequencia(mapping, canoniques, freq_lemes, freq_min)
+            mapping_multi_filtrat, canoniques, freq_filtrat = cls.filtrar_diccionari_per_frequencia(mapping_multi, canoniques, freq_lemes, freq_min)
             lemes_valids = set(canoniques.keys())
-            mapping_multi_filtrat = {f: {l for l in lems if l in lemes_valids} for f, lems in mapping_multi.items()}
             lema_cats_filtrat = {l: lema_cats.get(l, set()) for l in lemes_valids}
             # Aplica exclusions (formes/lemes) si existeix data/exclusions.json
             formes_exc, lemes_exc = cls._load_exclusions_json()
             if formes_exc or lemes_exc:
-                cls._apply_exclusions_to_data(mapping, canoniques, mapping_multi_filtrat, lema_cats_filtrat, freq_filtrat, formes_exc, lemes_exc)
-            return cls(mapping, canoniques, freq_filtrat, mapping_multi_filtrat, lema_cats_filtrat)
+                cls._apply_exclusions_to_data(canoniques, mapping_multi_filtrat, lema_cats_filtrat, freq_filtrat, formes_exc, lemes_exc)
+            return cls(mapping_multi_filtrat, canoniques, freq_filtrat, lema_cats_filtrat)
         raise NotImplementedError("Només es suporta un diccionari per ara.")
 
     def save(self, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'w', encoding='utf-8') as f:
             json.dump({
-                'mapping_flexions': self.mapping_flexions,
                 'mapping_flexions_multi': {k: list(v) for k, v in self.mapping_flexions_multi.items()},
                 'canoniques': {k: list(v) for k, v in self.canoniques.items()},
                 'lema_categories': {k: list(v) for k, v in self.lema_categories.items()},
@@ -169,15 +165,16 @@ class Diccionari:
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         return cls(
-            mapping_flexions=data['mapping_flexions'],
+            mapping_flexions_multi={k: set(v) for k, v in data['mapping_flexions_multi'].items()},
             canoniques={k: set(v) for k, v in data['canoniques'].items()},
             freq=data.get('freq', {}),
-            mapping_flexions_multi={k: set(v) for k, v in data.get('mapping_flexions_multi', {}).items()},
             lema_categories={k: set(v) for k, v in data.get('lema_categories', {}).items()}
         )
 
     def lema(self, flexio: str) -> Optional[str]:
-        return self.mapping_flexions.get(flexio)
+        """Retorna el primer lema per compatibilitat (pot ser arbitrari si n'hi ha múltiples)."""
+        lemes = self.mapping_flexions_multi.get(flexio, set())
+        return next(iter(lemes), None)
 
     def lemes(self, flexio: str) -> Set[str]:
         """Tots els lemes possibles per a una flexió."""
@@ -202,27 +199,76 @@ class Diccionari:
         rnd = random.Random(seed) if seed is not None else random
         return rnd.choice(candidats)
 
+    def _gestionar_pronominalitzacio(self, paraula_norm: str) -> Tuple[Optional[str], bool]:
+        """Gestiona la pronomització verbal (paraules acabades en "-se" o "'s").
+        
+        Retorna lema_verb si la paraula és una forma pronominal vàlida,
+        o None si no ho és.
+        """
+        paraula_sense_pronom = None
+        if paraula_norm.endswith("-se"):
+            paraula_sense_pronom = paraula_norm[:-3]  # Treu "-se"
+        elif paraula_norm.endswith("'s"):
+            paraula_sense_pronom = paraula_norm[:-2]  # Treu "'s"
+        
+        if not paraula_sense_pronom:
+            return None
+        
+        # Comprova si la paraula sense pronom existeix al diccionari
+        if paraula_sense_pronom not in self.mapping_flexions_multi:
+            return None
+        
+        lemes = self.mapping_flexions_multi[paraula_sense_pronom]
+        # Filtra només els lemes que són verbs (categoria 'VM')
+        lemes_verbs = [lema for lema in lemes if 'VM' in self.categories_lema(lema)]
+        
+        if not lemes_verbs:
+            return None
+        
+        # Comprova si el lema (infinitiu) permet aquesta forma pronominal
+        for lema_verb in lemes_verbs:
+            if paraula_norm.endswith("-se") and lema_verb.endswith("r"):
+                # Acceptem [lema]-se si el lema acaba en 'r'
+                return lema_verb
+            elif paraula_norm.endswith("'s") and lema_verb.endswith("e"):
+                # Acceptem [lema]'s si el lema acaba en 'e'
+                return lema_verb
+
+        return None
+
     def obtenir_forma_canonica(self, paraula: str) -> Tuple[Optional[str], bool]:
         paraula_norm = self.normalitzar_paraula(paraula)
         # Si tenim múltiples lemes, prioritzar el que coincideix exactament amb la forma
         if paraula_norm in self.mapping_flexions_multi:
             lemes = self.mapping_flexions_multi[paraula_norm]
+
             # Si el set de lemes està buit, retornar None (cas anòmal però possible)
             if not lemes:
                 return None, False
+                
             if paraula_norm in lemes:
                 forma_canonica = paraula_norm
             else:
-                # Manté compatibilitat amb mapping_flexions, si existeix; si no, primer lema arbitrari
-                forma_canonica = self.mapping_flexions.get(paraula_norm) or next(iter(lemes))
+                # Prioritza noms (NC) sobre verbs (VM), i després el més freqüent
+                def prioritat_lema(lema):
+                    categories = self.categories_lema(lema)
+                    te_nom = 'NC' in categories
+                    te_verb = 'VM' in categories
+                    freq = self.freq_lema(lema)
+                    # Retorna (prioritat_categoria, freqüència)
+                    # Noms tenen prioritat 1, verbs prioritat 0
+                    return (1 if te_nom else 0, freq)
+                
+                forma_canonica = max(lemes, key=prioritat_lema)
             es_flexio = paraula_norm != forma_canonica
-            return forma_canonica, es_flexio
-        # Fallback antic
-        if paraula_norm not in self.mapping_flexions:
-            return None, False
-        forma_canonica = self.mapping_flexions[paraula_norm]
-        es_flexio = paraula_norm != forma_canonica
-        return forma_canonica, es_flexio
+            return forma_canonica, es_flexio        
+            
+        # Gestió de pronomització verbal (paraules acabades en "-se" o "'s")
+        lema_verb = self._gestionar_pronominalitzacio(paraula_norm)
+        if lema_verb:
+            return lema_verb, True
+
+        return None, False
 
     # ------------------------------ Exclusions (formes i lemes) ------------------------------
     @classmethod
@@ -254,7 +300,6 @@ class Diccionari:
 
     @staticmethod
     def _apply_exclusions_to_data(
-        mapping_flexions: Dict[str, str],
         canoniques: Dict[str, Set[str]],
         mapping_flexions_multi: Dict[str, Set[str]],
         lema_categories: Dict[str, Set[str]],
@@ -272,21 +317,13 @@ class Diccionari:
             # Elimina lemes de mapping_flexions_multi
             for f in list(mapping_flexions_multi.keys()):
                 lemes = mapping_flexions_multi[f]
-                before = len(lemes)
                 lemes.difference_update(lemmas_to_exclude)
                 if not lemes:
                     del mapping_flexions_multi[f]
-                # Actualitza mapping_flexions
-                if f in mapping_flexions and mapping_flexions[f] in lemmas_to_exclude:
-                    if f in mapping_flexions_multi and mapping_flexions_multi[f]:
-                        mapping_flexions[f] = next(iter(mapping_flexions_multi[f]))
-                    else:
-                        mapping_flexions.pop(f, None)
 
         # 2) Exclou formes
         if forms_to_exclude:
             for f in forms_to_exclude:
-                mapping_flexions.pop(f, None)
                 mapping_flexions_multi.pop(f, None)
             # Treu formes de canòniques; elimina lemes que quedin buits
             for l in list(canoniques.keys()):
@@ -297,9 +334,3 @@ class Diccionari:
                         del canoniques[l]
                         lema_categories.pop(l, None)
                         freq.pop(l, None)
-            # Neteja mapping_flexions inconsistent
-            for f in list(mapping_flexions.keys()):
-                if f not in mapping_flexions_multi:
-                    del mapping_flexions[f]
-                elif mapping_flexions[f] not in mapping_flexions_multi[f]:
-                    mapping_flexions[f] = next(iter(mapping_flexions_multi[f]))
