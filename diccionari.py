@@ -206,12 +206,20 @@ class Diccionari:
         o None si no ho és.
         """
         paraula_sense_pronom = None
+        requiriment_terminacio = None
+        
         if paraula_norm.endswith("-se"):
             paraula_sense_pronom = paraula_norm[:-3]  # Treu "-se"
+            requiriment_terminacio = "r"  # La base ha d'acabar en 'r'
         elif paraula_norm.endswith("'s"):
             paraula_sense_pronom = paraula_norm[:-2]  # Treu "'s"
+            requiriment_terminacio = "e"  # La base ha d'acabar en 'e'
         
-        if not paraula_sense_pronom:
+        if not paraula_sense_pronom or not requiriment_terminacio:
+            return None
+        
+        # Comprova que la base compleix el requiriment de terminació
+        if not paraula_sense_pronom.endswith(requiriment_terminacio):
             return None
         
         # Comprova si la paraula sense pronom existeix al diccionari
@@ -219,22 +227,23 @@ class Diccionari:
             return None
         
         lemes = self.mapping_flexions_multi[paraula_sense_pronom]
-        # Filtra només els lemes que són verbs (categoria 'VM')
-        lemes_verbs = [lema for lema in lemes if 'VM' in self.categories_lema(lema)]
         
-        if not lemes_verbs:
+        # Filtra només els lemes que:
+        # 1. Són verbs (categoria 'VM')
+        # 2. La paraula sense pronom és exactament el lema (no una flexió)
+        # 3. El lema compleix el requiriment de terminació
+        lemes_verbs_valids = [
+            lema for lema in lemes 
+            if 'VM' in self.categories_lema(lema) 
+            and lema == paraula_sense_pronom  # La base HA de ser el lema mateix
+            and lema.endswith(requiriment_terminacio)
+        ]
+        
+        if not lemes_verbs_valids:
             return None
         
-        # Comprova si el lema (infinitiu) permet aquesta forma pronominal
-        for lema_verb in lemes_verbs:
-            if paraula_norm.endswith("-se") and lema_verb.endswith("r"):
-                # Acceptem [lema]-se si el lema acaba en 'r'
-                return lema_verb
-            elif paraula_norm.endswith("'s") and lema_verb.endswith("e"):
-                # Acceptem [lema]'s si el lema acaba en 'e'
-                return lema_verb
-
-        return None
+        # Retorna el primer lema vàlid (normalment només n'hi haurà un)
+        return lemes_verbs_valids[0]
 
     def obtenir_forma_canonica(self, paraula: str) -> Tuple[Optional[str], bool]:
         paraula_norm = self.normalitzar_paraula(paraula)
