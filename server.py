@@ -10,6 +10,7 @@ import logging
 from dotenv import load_dotenv
 from pathlib import Path
 from diccionari import Diccionari
+from diccionari_full import DiccionariFull
 
 class GuessRequest(BaseModel):
     paraula: str
@@ -21,6 +22,10 @@ class GuessResponse(BaseModel):
     posicio: int
     total_paraules: int
     es_correcta: bool
+
+class ExplicacioNoValida(BaseModel):
+    raó: str
+    suggeriments: Optional[List[str]] = None
 
 class PistaRequest(BaseModel):
     intents: List[Dict]
@@ -74,8 +79,18 @@ app.add_middleware(
 # Carregar diccionari
 DICCIONARI_PATH = os.getenv("DICCIONARI_PATH", "data/diccionari.json")
 DEFAULT_REBUSCADA = os.getenv("DEFAULT_REBUSCADA", "paraula")
+DICCIONARI_FULL_DB = os.path.join("data", DiccionariFull.DB_FILE)
 
 dicc = Diccionari.load(DICCIONARI_PATH)
+dicc_full = DiccionariFull(DICCIONARI_FULL_DB) if os.path.exists(DICCIONARI_FULL_DB) else None
+
+# Carregar llista d'exclusions
+EXCLUSIONS_PATH = os.path.join("data", "exclusions.json")
+exclusions_set = set()
+if os.path.exists(EXCLUSIONS_PATH):
+    with open(EXCLUSIONS_PATH, "r", encoding="utf-8") as f:
+        exclusions_data = json.load(f)
+        exclusions_set = set(Diccionari.normalitzar_paraula(l) for l in exclusions_data.get("lemmas", []))
 
 # Cache per emmagatzemar fins a 10 rànquings carregats (evita recarregar constantment)
 CACHE_MAX_SIZE = int(os.getenv("RANKING_CACHE_SIZE", "10"))
@@ -271,6 +286,95 @@ async def donar_pista(request: PistaRequest):
         posicio=ranking_diccionari[paraula_pista],
         total_paraules=total_paraules
     )
+
+@app.post("/whynot", response_model=ExplicacioNoValida)
+async def whynot(request: GuessRequest):
+    """Endpoint per explicar per què una paraula no és vàlida"""
+    ranking_diccionari, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada)
+    paraula_introduida = Diccionari.normalitzar_paraula(request.paraula)
+    forma_canonica, es_flexio = dicc.obtenir_forma_canonica(paraula_introduida)
+    rank_directe = ranking_diccionari.get(paraula_introduida)
+
+    
+    # Si la paraula és vàlida respondre HTTP Error ja que la paraula és correcta
+    if forma_canonica is not None or rank_directe is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="La paraula introduïda és vàlida; aquest endpoint només és per paraules no vàlides."
+        )
+
+    # Si no tenim diccionari complet, no podem donar explicacions detallades
+    if dicc_full is None:
+        raise HTTPException(
+            status_code=500,
+            detail="El diccionari complet no està disponible."
+        )
+
+    # Obtenir informació de la paraula del diccionari complet
+    info = dicc_full.info(paraula_introduida)
+
+    explicacio = "Aquesta paraula simplement no és vàlida."
+    suggeriments = None
+    
+    # 1. Si la paraula no existeix al diccionari complet -> error tipogràfic
+    if not info['known_form']:
+        explicacio = "Aquesta paraula probablement no està ben escrita."
+        # Recomanar paraules similars amb la funció near
+        near_result = dicc_full.near(paraula_introduida, limit=6, min_score=60)
+        if near_result['candidates']:
+            suggeriments = [c['word'] for c in near_result['candidates']]
+    
+    # 2. Si existeix, comprovar la categoria
+    else:
+        lemes = info['lemmas']
+        primary_lemma = info['primary_lemma'] or (lemes[0] if lemes else None)
+        
+        if not primary_lemma:
+            explicacio = "Aquesta paraula no és vàlida per una inconsistència al diccionari (#NOLEMA-ERROR). Si creus que hi hauria d'estar, si us plau, informa'ns."
+        else:
+            # Obtenir categories del lema principal
+            categories = info['lemma_categories'].get(primary_lemma, [])
+            cat_debug = ','.join(categories)
+            
+            # Comprovar si és una categoria no permesa (no NC ni VM)
+            te_nc_o_vm = any(cat in ['NC', 'VM'] for cat in categories)
+            
+            if not te_nc_o_vm and categories:
+                # Té categories però no són NC o VM
+                # Trobar la categoria més comuna per fer el missatge
+                from collections import Counter
+                counter = Counter(categories)
+                cat_principal = counter.most_common(1)[0][0] if counter else categories[0]
+                
+                # Etiqueta humana de la categoria
+                cat_label = dicc_full._cat2_label(cat_principal)
+                explicacio = f"Aquesta paraula és {cat_label}. Només es permeten noms i verbs comuns."
+            
+            # 3. Si està a la llista d'exclusions
+            elif primary_lemma in exclusions_set:              
+                if te_nc_o_vm:
+                    # Intentem justificar si té alguna altre categoria diferent a NC o VM
+                    altre_categories = [cat for cat in categories if cat not in ['NC', 'VM']]
+                    if altre_categories:
+                        from collections import Counter
+                        counter = Counter(altre_categories)
+                        cat_principal = counter.most_common(1)[0][0] if counter else altre_categories[0]
+                        cat_label = dicc_full._cat2_label(cat_principal)
+                        explicacio = f"Aquesta paraula és principalment {cat_label} i s'ha exclòs del joc."
+                    else:
+                        explicacio = "Aquesta paraula s'ha exclòs del joc (pot ser un arcaisme, castellanisme o per canvis ortogràfics recents)."
+            
+            # 4. Si existeix al diccionari però no al ranking -> poca freqüència
+            elif forma_canonica is None and rank_directe is None:
+                explicacio = "Aquesta paraula és massa poc comuna i s'ha exclòs del joc, per facilitar la jugabilitat."
+
+    logger.info(f"WHYNOT: '{paraula_introduida}' -> {explicacio[:50]}...")
+    
+    return ExplicacioNoValida(
+        raó=explicacio,
+        suggeriments=suggeriments
+    )
+
 
 @app.get("/")
 async def root():
