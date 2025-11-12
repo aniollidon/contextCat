@@ -292,6 +292,38 @@ async def whynot(request: GuessRequest):
     """Endpoint per explicar per què una paraula no és vàlida"""
     ranking_diccionari, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada)
     paraula_introduida = Diccionari.normalitzar_paraula(request.paraula)
+    # Cas específic: espais no permesos (només una paraula simple)
+    if any(ch.isspace() for ch in request.paraula):
+        suggeriments = None
+        try:
+            if dicc_full is not None:
+                # Prova sense espais per suggerir alternatives
+                sense_espais = "".join(paraula_introduida.split())
+                if sense_espais:
+                    near_result = dicc_full.near(sense_espais, limit=6, min_score=60)
+                    if near_result and near_result.get('candidates'):
+                        suggeriments = [c['word'] for c in near_result['candidates']]
+        except Exception:
+            suggeriments = None
+
+        logger.info(f"WHYNOT: '{request.paraula}' -> conté espais")
+        return ExplicacioNoValida(
+            raó=(
+                "Sembla que has introduït un espai. Només s'accepten paraules simples (sense espais)."
+            ),
+            suggeriments=suggeriments
+        )
+
+    # Validació de caràcters catalans permesos
+    if not is_catalan(paraula_introduida):
+        logger.info(f"WHYNOT: '{paraula_introduida}' -> caràcters no permesos")
+        return ExplicacioNoValida(
+            raó=(
+                "Aquesta paraula conté caràcters no permesos. Només s'accepten lletres catalanes amb accents, "
+                "dièresi, la ce trencada (ç), el punt volat (l·l) i el guionet (-)."
+            ),
+            suggeriments=None
+        )
     forma_canonica, es_flexio = dicc.obtenir_forma_canonica(paraula_introduida)
     rank_directe = ranking_diccionari.get(paraula_introduida)
 
