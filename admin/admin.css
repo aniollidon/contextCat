@@ -218,7 +218,8 @@
 }
 
 /* Configuració general */
-#settings-btn {
+#settings-btn,
+#calendar-btn {
   margin-top: 8px;
   font-size: 13px;
 }
@@ -412,3 +413,16 @@
 }
 
 /* ==================== FI ESTILS DE COMENTARIS ==================== */
+
+/* ==================== ESTILS DEL CALENDARI ==================== */
+
+.calendar-word-input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.calendar-remove-btn {
+  min-width: 38px;
+}
+
+/* ==================== FI ESTILS DEL CALENDARI ==================== */

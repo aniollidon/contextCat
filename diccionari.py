@@ -152,12 +152,31 @@ class Diccionari:
 
     def save(self, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        
+        # TRUC: Reduir freqüència de verbs molt comuns per millorar les pistes
+        # Els verbs molt freqüents dominen massa el sistema de pistes, així que
+        # reduïm artificialment la seva freqüència per donar més varietat
+        freq_ajustada = {}
+        for lema, freq_original in self.freq.items():
+            categories = self.lema_categories.get(lema, set())
+            es_verb = 'VM' in categories
+            
+            if es_verb and freq_original > 100000:
+                # Verbs molt freqüents: dividir per 6
+                freq_ajustada[lema] = freq_original // 6
+            elif es_verb and freq_original > 50000:
+                # Verbs freqüents: dividir per 3
+                freq_ajustada[lema] = freq_original // 3
+            else:
+                # Mantenir freqüència original
+                freq_ajustada[lema] = freq_original
+        
         with open(path, 'w', encoding='utf-8') as f:
             json.dump({
                 'mapping_flexions_multi': {k: list(v) for k, v in self.mapping_flexions_multi.items()},
                 'canoniques': {k: list(v) for k, v in self.canoniques.items()},
                 'lema_categories': {k: list(v) for k, v in self.lema_categories.items()},
-                'freq': self.freq
+                'freq': freq_ajustada
             }, f, ensure_ascii=False, indent=2)
 
     @classmethod

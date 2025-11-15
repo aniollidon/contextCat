@@ -1059,6 +1059,41 @@ def delete_word_comment(filename: str, word: str, _: None = Depends(require_auth
 
 # ==================== FI ENDPOINTS DE COMENTARIS ====================
 
+# ==================== ENDPOINTS PER GESTIONAR GAMES.JSON ====================
+
+class SaveGamesRequest(BaseModel):
+    games: list
+
+@app.get("/api/games")
+def get_games(_: None = Depends(require_auth)):
+    """Retorna el fitxer games.json amb la llista de paraules del calendari."""
+    games_path = Path(__file__).parent / "data" / "games.json"
+    
+    if not games_path.exists():
+        return {"games": []}
+    
+    try:
+        with open(games_path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error llegint games.json: {str(e)}")
+
+@app.post("/api/save-games")
+def save_games(req: SaveGamesRequest, _: None = Depends(require_auth)):
+    """Desa el fitxer games.json amb la llista de paraules del calendari."""
+    games_path = Path(__file__).parent / "data" / "games.json"
+    
+    try:
+        data = {"games": req.games}
+        with open(games_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error desant games.json: {str(e)}")
+
+# ==================== FI ENDPOINTS GAMES.JSON ====================
+
 if __name__ == "__main__":
     import sys
     import argparse
@@ -1071,7 +1106,11 @@ if __name__ == "__main__":
             from fastapi.staticfiles import StaticFiles
             from fastapi.responses import RedirectResponse
             admin_dir = Path(__file__).parent / "admin"
+            data_dir = Path(__file__).parent / "data"
             if admin_dir.exists():
+                # Munta el directori data per servir games.json i altres fitxers
+                if data_dir.exists():
+                    app.mount("/data", StaticFiles(directory=str(data_dir)), name="data")
                 # Munta els fitxers estàtics a /admin
                 app.mount("/admin", StaticFiles(directory=str(admin_dir), html=True), name="admin")
                 # Redirecció arrel -> /admin/

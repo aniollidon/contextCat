@@ -1,5 +1,6 @@
 // Configuració
 const PORT = 3000; // Port on corre el backend admin (uvicorn)
+//const SERVER = `http://localhost:${PORT}`;
 const SERVER = `http://5.250.190.223:${PORT}`;
 // Bases d'API
 const API_BASE = `${SERVER}/api`;
@@ -16,7 +17,7 @@ const AI_GENERATE_ENDPOINT = `${API_BASE}/ai-generate`;
 const PAGE_SIZE = 300;
 // Diccionari (obertura en nova pestanya). Substituïm [PARAULA]
 const DICT_URL_TEMPLATE =
-  "https://www.diccionari.cat/cerca/gran-diccionari-de-la-llengua-catalana?search_api_fulltext_cust=[PARAULA]";
+  "https://dlc.iec.cat/Results?DecEntradaText=[PARAULA]&AllInfoMorf=False&OperEntrada=0&OperDef=0&OperEx=0&OperSubEntrada=0&OperAreaTematica=0&InfoMorfType=0&OperCatGram=False&AccentSen=False&CurrentPage=0&refineSearch=0&Actualitzacions=False";
 
 let adminToken = null; // guardem la contrasenya (x-admin-token)
 
@@ -75,6 +76,12 @@ let showOnlyValidated = false; // filtre de fitxers validats
 let showOnlyFavorites = false; // filtre de fitxers preferits
 let autoSaveTimer = null; // temporitzador per auto-desat
 const AUTO_SAVE_DELAY = 800; // ms després de l'últim canvi de drag
+
+// Gestió del calendari
+let calendarGames = []; // llista de {id, name}
+let calendarFilterValidated = false;
+let calendarFilterFavorites = false;
+let calendarFilterUnique = true; // Activat per defecte per evitar repeticions
 
 // Configuració general
 let settings = {
@@ -173,7 +180,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   loadSettings(); // Carrega la configuració al iniciar
   renderApp();
   const ok = await ensureAuthenticated();
-  if (ok) fetchFiles();
+  if (ok) {
+    fetchFiles();
+    loadCalendarGames(); // Carrega el calendari de paraules
+  }
 });
 
 function renderApp() {
@@ -182,9 +192,14 @@ function renderApp() {
     <div class="p-3 py-2">
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="mb-0 rebuscada" >Rebuscada.cat - Gestió</h4>
-        <button class="btn btn-outline-secondary btn-sm" id="settings-btn" title="Configuració general">
-          <i class="bi bi-gear"></i>
-        </button>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" id="calendar-btn" title="Gestió del calendari de paraules">
+            <i class="bi bi-calendar3"></i>
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" id="settings-btn" title="Configuració general">
+            <i class="bi bi-gear"></i>
+          </button>
+        </div>
       </div>
       <div class="row g-3" id="main-layout">
         <div class="col-auto" style="width: 300px;">
@@ -273,6 +288,44 @@ function renderApp() {
           </div>
         </div>
       </div>
+      <!-- Modal del calendari de paraules -->
+      <div class="modal fade" id="calendarModal" tabindex="-1" aria-labelledby="calendarModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" id="calendarModalLabel">Gestió del calendari de paraules</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tanca"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label">Filtres:</label>
+                <div class="btn-group btn-group-sm mb-2" role="group">
+                  <input type="checkbox" class="btn-check" id="filter-cal-validated" autocomplete="off">
+                  <label class="btn btn-outline-primary" for="filter-cal-validated">Validats</label>
+                  
+                  <input type="checkbox" class="btn-check" id="filter-cal-favorites" autocomplete="off">
+                  <label class="btn btn-outline-primary" for="filter-cal-favorites">Preferits</label>
+                  
+                  <input type="checkbox" class="btn-check" id="filter-cal-unique" autocomplete="off">
+                  <label class="btn btn-outline-primary" for="filter-cal-unique">Únics</label>
+                </div>
+              </div>
+              <div id="calendar-list" style="max-height: 60vh; overflow-y: auto;">
+                <!-- Llista dinàmica de paraules -->
+              </div>
+              <div class="mt-3">
+                <button class="btn btn-success btn-sm" id="add-calendar-item">
+                  <i class="bi bi-plus-circle"></i> Afegir paraula
+                </button>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Tanca</button>
+              <button type="button" class="btn btn-primary" id="saveCalendarBtn">Desa canvis</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   `;
   bindStaticEvents();
@@ -288,6 +341,7 @@ function bindStaticEvents() {
   const validatedChk = document.getElementById("filter-validated");
   const favoritesChk = document.getElementById("filter-favorites");
   const settingsBtn = document.getElementById("settings-btn");
+  const calendarBtn = document.getElementById("calendar-btn");
   const difficultySelector = document.getElementById("difficulty-selector");
 
   if (filterChk) {
@@ -330,6 +384,7 @@ function bindStaticEvents() {
   if (testBtn) testBtn.onclick = toggleTestOverlay;
   if (addNewBtn) addNewBtn.onclick = promptAddNewWord;
   if (settingsBtn) settingsBtn.onclick = openSettingsModal;
+  if (calendarBtn) calendarBtn.onclick = openCalendarModal;
 
   // Event per al selector de dificultat
   if (difficultySelector) {
@@ -401,6 +456,284 @@ function saveSettingsFromModal() {
 
   // Mostra confirmació
   console.log("Configuració desada:", settings);
+}
+
+// Funcions per la gestió del calendari
+async function loadCalendarGames() {
+  try {
+    const res = await fetch(`${API_BASE}/games`, {
+      headers: { ...authHeaders() },
+    });
+    if (!res.ok) throw new Error("No s'ha pogut carregar games.json");
+    const data = await res.json();
+    calendarGames = data.games || [];
+  } catch (e) {
+    console.error("Error carregant games.json:", e);
+    calendarGames = [];
+  }
+}
+
+function getAvailableWords() {
+  // Retorna llista de paraules disponibles al directori data/words/
+  return files.map((f) => f.replace(".json", ""));
+}
+
+function getFilteredWords() {
+  let words = getAvailableWords();
+
+  if (calendarFilterValidated) {
+    words = words.filter(
+      (w) =>
+        validations[w + ".json"] === "validated" ||
+        validations[w + ".json"] === "approved"
+    );
+  }
+
+  if (calendarFilterFavorites) {
+    words = words.filter((w) => favorites[w + ".json"]);
+  }
+
+  if (calendarFilterUnique) {
+    // Filtra paraules que ja estan a la llista
+    const usedWords = new Set(calendarGames.map((g) => g.name));
+    words = words.filter((w) => !usedWords.has(w));
+  }
+
+  return words.sort();
+}
+
+function renderCalendarList() {
+  const container = document.getElementById("calendar-list");
+  if (!container) return;
+
+  // Desa l'índex del focus actual
+  const focusedElement = document.activeElement;
+  const focusedIdx = focusedElement?.dataset?.calIdx
+    ? parseInt(focusedElement.dataset.calIdx)
+    : null;
+
+  const availableWords = getFilteredWords();
+  const usedWords = new Map();
+
+  // Detecta repeticions
+  calendarGames.forEach((game, idx) => {
+    if (!usedWords.has(game.name)) {
+      usedWords.set(game.name, [idx]);
+    } else {
+      usedWords.get(game.name).push(idx);
+    }
+  });
+
+  container.innerHTML = calendarGames
+    .map((game, idx) => {
+      const isDuplicate =
+        usedWords.get(game.name).length > 1 &&
+        usedWords.get(game.name)[0] !== idx;
+      const isInvalid = game.name && !files.includes(game.name + ".json");
+      const bgClass = isDuplicate
+        ? "bg-warning bg-opacity-25"
+        : isInvalid
+        ? "bg-danger bg-opacity-25"
+        : "";
+
+      return `
+      <div class="d-flex align-items-center gap-2 mb-2 p-2 border rounded ${bgClass}" data-cal-idx="${idx}">
+        <span class="text-muted" style="min-width: 40px;">${game.id}.</span>
+        <input type="text" 
+               class="form-control form-control-sm calendar-word-input" 
+               data-cal-idx="${idx}"
+               value="${game.name}" 
+               list="words-datalist-${idx}"
+               placeholder="Escriu o selecciona...">
+        <datalist id="words-datalist-${idx}">
+          ${availableWords.map((w) => `<option value="${w}">`).join("")}
+        </datalist>
+        ${
+          isDuplicate
+            ? '<small class="text-warning ms-1" title="Paraula repetida: aquesta paraula ja apareix a la llista"><i class="bi bi-exclamation-triangle"></i></small>'
+            : ""
+        }
+        ${
+          isInvalid
+            ? '<small class="text-danger ms-1" title="Paraula no trobada: el fitxer /data/words/' +
+              game.name +
+              '.json no existeix"><i class="bi bi-x-circle"></i></small>'
+            : ""
+        }
+        <button class="btn btn-sm btn-outline-danger calendar-remove-btn" data-cal-idx="${idx}">
+          <i class="bi bi-trash"></i>
+        </button>
+      </div>
+    `;
+    })
+    .join("");
+
+  // Bind events
+  container.querySelectorAll(".calendar-word-input").forEach((input) => {
+    let updateTimeout;
+    input.addEventListener("input", (e) => {
+      const idx = parseInt(e.target.dataset.calIdx);
+      calendarGames[idx].name = e.target.value.trim();
+
+      // Actualitza només les validacions visuals sense re-renderitzar tot
+      const parentDiv = e.target.closest("[data-cal-idx]");
+      const currentWord = e.target.value.trim();
+      const isDuplicate =
+        calendarGames.filter((g) => g.name === currentWord).length > 1;
+      const isInvalid = currentWord && !files.includes(currentWord + ".json");
+
+      parentDiv.className = parentDiv.className.replace(/bg-\w+-\w+-\d+/g, "");
+      if (isDuplicate) {
+        parentDiv.classList.add("bg-warning", "bg-opacity-25");
+      } else if (isInvalid) {
+        parentDiv.classList.add("bg-danger", "bg-opacity-25");
+      }
+    });
+  });
+
+  container.querySelectorAll(".calendar-remove-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const idx = parseInt(e.currentTarget.dataset.calIdx);
+      if (
+        confirm(
+          `Segur que vols eliminar la paraula ${calendarGames[idx].name}?`
+        )
+      ) {
+        calendarGames.splice(idx, 1);
+        // Reassigna IDs
+        calendarGames.forEach((g, i) => (g.id = i + 1));
+        renderCalendarList();
+      }
+    });
+  });
+
+  // Restaura el focus si hi havia
+  if (focusedIdx !== null) {
+    const newInput = container.querySelector(
+      `input[data-cal-idx="${focusedIdx}"]`
+    );
+    if (newInput) {
+      newInput.focus();
+    }
+  }
+}
+
+async function openCalendarModal() {
+  // Recarrega sempre el fitxer games.json per assegurar sincronització amb el servidor
+  await loadCalendarGames();
+
+  // Actualitza filtres
+  const filterValidated = document.getElementById("filter-cal-validated");
+  const filterFavorites = document.getElementById("filter-cal-favorites");
+  const filterUnique = document.getElementById("filter-cal-unique");
+
+  if (filterValidated) {
+    filterValidated.checked = calendarFilterValidated;
+    filterValidated.onchange = () => {
+      calendarFilterValidated = filterValidated.checked;
+      renderCalendarList();
+    };
+  }
+
+  if (filterFavorites) {
+    filterFavorites.checked = calendarFilterFavorites;
+    filterFavorites.onchange = () => {
+      calendarFilterFavorites = filterFavorites.checked;
+      renderCalendarList();
+    };
+  }
+
+  if (filterUnique) {
+    filterUnique.checked = calendarFilterUnique;
+    filterUnique.onchange = () => {
+      calendarFilterUnique = filterUnique.checked;
+      renderCalendarList();
+    };
+  }
+
+  renderCalendarList();
+
+  // Obre el modal
+  const calendarModal = new bootstrap.Modal(
+    document.getElementById("calendarModal")
+  );
+  calendarModal.show();
+
+  // Bind botó afegir
+  const addBtn = document.getElementById("add-calendar-item");
+  if (addBtn) {
+    addBtn.onclick = () => {
+      const newId =
+        calendarGames.length > 0
+          ? Math.max(...calendarGames.map((g) => g.id)) + 1
+          : 1;
+      const newIdx = calendarGames.length;
+      calendarGames.push({ id: newId, name: "" });
+      renderCalendarList();
+
+      // Posa focus al nou input
+      setTimeout(() => {
+        const newInput = document.querySelector(
+          `input[data-cal-idx="${newIdx}"]`
+        );
+        if (newInput) {
+          newInput.focus();
+          // Scroll fins al final
+          const container = document.getElementById("calendar-list");
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+          }
+        }
+      }, 0);
+    };
+  }
+
+  // Bind botó desar
+  const saveBtn = document.getElementById("saveCalendarBtn");
+  if (saveBtn) {
+    saveBtn.onclick = saveCalendarGames;
+  }
+}
+
+async function saveCalendarGames() {
+  // Valida que no hi hagi paraules buides
+  const emptyWords = calendarGames.filter((g) => !g.name || !g.name.trim());
+  if (emptyWords.length > 0) {
+    alert(
+      `No es pot desar: hi ha ${emptyWords.length} paraula(es) buida(es). Si us plau, omple-les o elimina-les.`
+    );
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/save-games`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ games: calendarGames }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Error desant" }));
+      alert(err.detail || "Error desant el calendari");
+      return;
+    }
+
+    // Recarrega el fitxer games.json del servidor per assegurar sincronització
+    await loadCalendarGames();
+
+    alert("Calendari desat correctament!");
+
+    // Tanca el modal
+    const calendarModal = bootstrap.Modal.getInstance(
+      document.getElementById("calendarModal")
+    );
+    if (calendarModal) {
+      calendarModal.hide();
+    }
+  } catch (e) {
+    console.error("Error desant calendari:", e);
+    alert("Error de xarxa desant el calendari");
+  }
 }
 
 async function addTestWordsPrompt() {

@@ -1,5 +1,5 @@
 
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, HTTPException, Request, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
@@ -11,10 +11,15 @@ from dotenv import load_dotenv
 from pathlib import Path
 from diccionari import Diccionari
 from diccionari_full import DiccionariFull
+import uuid
+import asyncio
+from datetime import datetime
 
 class GuessRequest(BaseModel):
     paraula: str
     rebuscada: Optional[str] = None  # Paraula del dia opcional
+    comp_id: Optional[str] = None  # ID de competició opcional
+    nom_jugador: Optional[str] = None  # Nom del jugador en competició
 
 class GuessResponse(BaseModel):
     paraula: str
@@ -30,6 +35,8 @@ class ExplicacioNoValida(BaseModel):
 class PistaRequest(BaseModel):
     intents: List[Dict]
     rebuscada: Optional[str] = None  # Paraula del dia opcional
+    comp_id: Optional[str] = None  # ID de competició opcional
+    nom_jugador: Optional[str] = None  # Nom del jugador en competició
 
 class PistaResponse(BaseModel):
     paraula: str
@@ -39,6 +46,8 @@ class PistaResponse(BaseModel):
 
 class RendirseRequest(BaseModel):
     rebuscada: Optional[str] = None  # Paraula del dia opcional
+    comp_id: Optional[str] = None  # ID de competició opcional
+    nom_jugador: Optional[str] = None  # Nom del jugador en competició
 
 class RendirseResponse(BaseModel):
     paraula_correcta: str
@@ -52,6 +61,41 @@ class RankingListResponse(BaseModel):
     total_paraules: int
     objectiu: str
     ranking: List[RankingItem]
+
+# Models per competicions
+class PlayerState(BaseModel):
+    nom: str
+    intents: int = 0
+    pistes: int = 0
+    estat_joc: str = "jugant"  # "jugant", "guanyat" o "rendit"
+    millor_posicio: Optional[int] = None  # Millor posició aconseguida
+    ultima_actualitzacio: str
+
+class CompetitionState(BaseModel):
+    comp_id: str
+    rebuscada: str
+    creador: str
+    jugadors: Dict[str, PlayerState]
+    data_creacio: str
+    ultima_activitat: str
+
+class CreateCompetitionRequest(BaseModel):
+    nom_creador: str
+    rebuscada: Optional[str] = None
+    intents_existents: Optional[List[Dict]] = None
+
+class CreateCompetitionResponse(BaseModel):
+    comp_id: str
+    rebuscada: str
+
+class JoinCompetitionRequest(BaseModel):
+    nom_jugador: str
+    intents_existents: Optional[List[Dict]] = None
+
+class JoinCompetitionResponse(BaseModel):
+    comp_id: str
+    rebuscada: str
+    nom_jugador: str
 
 # Configurar logging
 logging.basicConfig(
@@ -67,10 +111,18 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 app = FastAPI()
 
+@app.on_event("startup")
+async def startup_event():
+    """Inicia la tasca de neteja de competicions caducades"""
+    asyncio.create_task(cleanup_expired_competitions())
+    logger.info(f"Competition cleanup task started (expiry: {COMPETITION_EXPIRY_DAYS} days)")
+
 # Configurar CORS
+# En producció només permetre rebuscada.cat, en desenvolupament també localhost
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "https://rebuscada.cat,http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://rebuscada.cat"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,9 +132,40 @@ app.add_middleware(
 DICCIONARI_PATH = os.getenv("DICCIONARI_PATH", "data/diccionari.json")
 DEFAULT_REBUSCADA = os.getenv("DEFAULT_REBUSCADA", "paraula")
 DICCIONARI_FULL_DB = os.path.join("data", DiccionariFull.DB_FILE)
+COMPETITION_EXPIRY_DAYS = int(os.getenv("COMPETITION_EXPIRY_DAYS", "2"))
 
 dicc = Diccionari.load(DICCIONARI_PATH)
 dicc_full = DiccionariFull(DICCIONARI_FULL_DB) if os.path.exists(DICCIONARI_FULL_DB) else None
+
+# Emmagatzematge en memòria per competicions
+competitions: Dict[str, CompetitionState] = {}
+competition_connections: Dict[str, List[WebSocket]] = {}
+
+# Funció de neteja de competicions caducades
+async def cleanup_expired_competitions():
+    """Esborra competicions que no han tingut activitat en els últims N dies"""
+    while True:
+        try:
+            await asyncio.sleep(3600)  # Comprova cada hora
+            
+            now = datetime.now()
+            expired_ids = []
+            
+            for comp_id, competition in competitions.items():
+                ultima_activitat = datetime.fromisoformat(competition.ultima_activitat)
+                days_inactive = (now - ultima_activitat).days
+                
+                if days_inactive >= COMPETITION_EXPIRY_DAYS:
+                    expired_ids.append(comp_id)
+                    logger.info(f"COMPETITION: Expiring {comp_id} (inactive for {days_inactive} days)")
+            
+            # Esborrar competicions caducades
+            for comp_id in expired_ids:
+                del competitions[comp_id]
+                if comp_id in competition_connections:
+                    del competition_connections[comp_id]
+        except Exception as e:
+            logger.error(f"Error in cleanup_expired_competitions: {e}")
 
 # Carregar llista d'exclusions
 EXCLUSIONS_PATH = os.path.join("data", "exclusions.json")
@@ -183,6 +266,15 @@ async def guess(request: GuessRequest):
     status = "CORRECTA!" if es_correcta else f"#{rank}"
     logger.info(f"GUESS: '{paraula_introduida}'{' ('+ forma_canonica + ')' if es_flexio else ''} -> {status} (objectiu: {paraula_objectiu})")
     
+    # Si és una competició, actualitzar estat
+    if request.comp_id and request.nom_jugador:
+        await actualitzar_progres_competicio(
+            request.comp_id, 
+            request.nom_jugador, 
+            posicio=rank,
+            estat_joc="guanyat" if es_correcta else None
+        )
+    
     return GuessResponse(
         paraula=paraula_introduida,
         forma_canonica=forma_canonica if es_flexio else None,
@@ -279,6 +371,15 @@ async def donar_pista(request: PistaRequest):
     
     # Log de la pista donada
     logger.info(f"PISTA: '{paraula_pista}' -> #{ranking_diccionari[paraula_pista]} (objectiu: {paraula_objectiu}, millor: #{millor_ranking})")
+    
+    # Si és una competició, actualitzar pistes
+    if request.comp_id and request.nom_jugador:
+        await actualitzar_progres_competicio(
+            request.comp_id, 
+            request.nom_jugador, 
+            incrementar_pistes=True,
+            posicio=ranking_diccionari[paraula_pista]
+        )
     
     return PistaResponse(
         paraula=paraula_pista,
@@ -408,6 +509,267 @@ async def whynot(request: GuessRequest):
     )
 
 
+async def actualitzar_progres_competicio(
+    comp_id: str, 
+    nom_jugador: str, 
+    incrementar_pistes: bool = False,
+    posicio: Optional[int] = None,
+    estat_joc: Optional[str] = None
+):
+    """Actualitza el progrés d'un jugador en una competició
+    
+    Args:
+        estat_joc: "guanyat", "rendit" o None (per mantenir estat actual)
+    """
+    if comp_id not in competitions:
+        return
+    
+    competition = competitions[comp_id]
+    if nom_jugador not in competition.jugadors:
+        return
+    
+    player = competition.jugadors[nom_jugador]
+    
+    if not incrementar_pistes:
+        player.intents += 1
+    
+    if incrementar_pistes:
+        player.pistes += 1
+    
+    if estat_joc is not None:
+        player.estat_joc = estat_joc
+    
+    # Actualitzar millor posició
+    if posicio is not None:
+        if player.millor_posicio is None or posicio < player.millor_posicio:
+            player.millor_posicio = posicio
+    
+    now = datetime.now().isoformat()
+    player.ultima_actualitzacio = now
+    competition.ultima_activitat = now
+    
+    # Notificar altres jugadors
+    await broadcast_competition_update(comp_id)
+
+async def broadcast_competition_update(comp_id: str):
+    """Envia actualitzacions a tots els clients connectats a una competició"""
+    if comp_id not in competition_connections:
+        return
+    
+    if comp_id not in competitions:
+        return
+    
+    competition = competitions[comp_id]
+    message = {
+        "type": "update",
+        "jugadors": [
+            {
+                "nom": player.nom,
+                "intents": player.intents,
+                "pistes": player.pistes,
+                "estat_joc": player.estat_joc,
+                "millor_posicio": player.millor_posicio
+            }
+            for player in competition.jugadors.values()
+        ]
+    }
+    
+    # Enviar a tots els websockets connectats
+    disconnected = []
+    for websocket in competition_connections[comp_id]:
+        try:
+            await websocket.send_json(message)
+        except:
+            disconnected.append(websocket)
+    
+    # Netejar connexions desconnectades
+    for ws in disconnected:
+        competition_connections[comp_id].remove(ws)
+
+@app.post("/competition/create", response_model=CreateCompetitionResponse)
+async def create_competition(request: CreateCompetitionRequest):
+    """Crea una nova competició"""
+    try:
+        comp_id = str(uuid.uuid4())[:8]  # ID curt
+        rebuscada = request.rebuscada or DEFAULT_REBUSCADA
+        
+        # Validar que la rebuscada existeix
+        try:
+            carregar_ranking(rebuscada)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Paraula no vàlida: {str(e)}")
+        
+        now = datetime.now().isoformat()
+        
+        # Calcular intents i millor posició dels intents existents
+        intents_count = len(request.intents_existents) if request.intents_existents else 0
+        millor_pos = None
+        if request.intents_existents:
+            posicions = [intent.get('posicio') for intent in request.intents_existents if 'posicio' in intent]
+            if posicions:
+                millor_pos = min(posicions)
+        
+        player_state = PlayerState(
+            nom=request.nom_creador,
+            intents=intents_count,
+            pistes=0,
+            estat_joc="jugant",
+            millor_posicio=millor_pos,
+            ultima_actualitzacio=now
+        )
+        
+        competition = CompetitionState(
+            comp_id=comp_id,
+            rebuscada=rebuscada,
+            creador=request.nom_creador,
+            jugadors={request.nom_creador: player_state},
+            data_creacio=now,
+            ultima_activitat=now
+        )
+        
+        competitions[comp_id] = competition
+        competition_connections[comp_id] = []
+        
+        logger.info(f"COMPETITION: Created {comp_id} by {request.nom_creador} for word '{rebuscada}' with {intents_count} existing attempts (millor pos: {millor_pos})")
+        
+        return CreateCompetitionResponse(
+            comp_id=comp_id,
+            rebuscada=rebuscada
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating competition: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/competition/{comp_id}/join", response_model=JoinCompetitionResponse)
+async def join_competition(comp_id: str, request: JoinCompetitionRequest):
+    """Uneix un jugador a una competició existent"""
+    if comp_id not in competitions:
+        raise HTTPException(status_code=404, detail="Competició no trobada")
+    
+    competition = competitions[comp_id]
+    
+    # Comprovar si el nom ja està ocupat
+    now = datetime.now().isoformat()
+    if request.nom_jugador in competition.jugadors:
+        # Nom ja ocupat per un altre jugador
+        logger.warning(f"COMPETITION: Player name '{request.nom_jugador}' already exists in {comp_id}")
+        raise HTTPException(
+            status_code=409, 
+            detail=f"El nom '{request.nom_jugador}' ja està ocupat en aquesta competició. Tria un altre nom."
+        )
+    else:
+        # Nou jugador
+        intents_count = len(request.intents_existents) if request.intents_existents else 0
+        
+        # Calcular la millor posició dels intents existents
+        millor_pos = None
+        if request.intents_existents:
+            posicions = [intent.get('posicio') for intent in request.intents_existents if 'posicio' in intent]
+            if posicions:
+                millor_pos = min(posicions)
+        
+        player_state = PlayerState(
+            nom=request.nom_jugador,
+            intents=intents_count,
+            pistes=0,
+            estat_joc="jugant",
+            millor_posicio=millor_pos,
+            ultima_actualitzacio=now
+        )
+        
+        competition.jugadors[request.nom_jugador] = player_state
+        logger.info(f"COMPETITION: Player {request.nom_jugador} joined {comp_id} with {intents_count} existing attempts (millor pos: {millor_pos})")
+        
+        # Notificar altres jugadors
+        await broadcast_competition_update(comp_id)
+    
+    return JoinCompetitionResponse(
+        comp_id=comp_id,
+        rebuscada=competition.rebuscada,
+        nom_jugador=request.nom_jugador
+    )
+
+@app.get("/competition/{comp_id}", response_model=CompetitionState)
+async def get_competition(comp_id: str):
+    """Obté l'estat actual d'una competició"""
+    if comp_id not in competitions:
+        raise HTTPException(status_code=404, detail="Competició no trobada")
+    
+    return competitions[comp_id]
+
+@app.post("/competition/{comp_id}/leave")
+async def leave_competition(comp_id: str, nom_jugador: str = Query(...)):
+    """Surt d'una competició (elimina el jugador)"""
+    if comp_id not in competitions:
+        raise HTTPException(status_code=404, detail="Competició no trobada")
+    
+    competition = competitions[comp_id]
+    
+    if nom_jugador not in competition.jugadors:
+        raise HTTPException(status_code=404, detail="Jugador no trobat en aquesta competició")
+    
+    # Eliminar jugador
+    del competition.jugadors[nom_jugador]
+    logger.info(f"COMPETITION: Player {nom_jugador} left {comp_id}")
+    
+    # Si no queden jugadors, eliminar la competició
+    if len(competition.jugadors) == 0:
+        del competitions[comp_id]
+        if comp_id in competition_connections:
+            del competition_connections[comp_id]
+        logger.info(f"COMPETITION: Deleted {comp_id} (no players left)")
+    else:
+        # Notificar altres jugadors
+        await broadcast_competition_update(comp_id)
+    
+    return {"message": "Has sortit de la competició"}
+
+@app.websocket("/ws/competition/{comp_id}")
+async def competition_websocket(websocket: WebSocket, comp_id: str):
+    """WebSocket per rebre actualitzacions en temps real d'una competició"""
+    if comp_id not in competitions:
+        await websocket.close(code=1008, reason="Competició no trobada")
+        return
+    
+    await websocket.accept()
+    
+    if comp_id not in competition_connections:
+        competition_connections[comp_id] = []
+    
+    competition_connections[comp_id].append(websocket)
+    logger.info(f"COMPETITION WS: Client connected to {comp_id}")
+    
+    try:
+        # Enviar estat inicial
+        competition = competitions[comp_id]
+        await websocket.send_json({
+            "type": "init",
+            "jugadors": [
+                {
+                    "nom": player.nom,
+                    "intents": player.intents,
+                    "pistes": player.pistes,
+                    "estat_joc": player.estat_joc,
+                    "millor_posicio": player.millor_posicio
+                }
+                for player in competition.jugadors.values()
+            ]
+        })
+        
+        # Mantenir connexió oberta
+        while True:
+            # Esperar missatges (per detectar desconnexions)
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        logger.info(f"COMPETITION WS: Client disconnected from {comp_id}")
+    except Exception as e:
+        logger.error(f"COMPETITION WS: Error - {str(e)}")
+    finally:
+        if websocket in competition_connections.get(comp_id, []):
+            competition_connections[comp_id].remove(websocket)
+
 @app.get("/")
 async def root():
     return {"message": "API del joc de paraules (refactoritzat)"}
@@ -426,6 +788,14 @@ async def rendirse(request: RendirseRequest):
         
         # Log de rendició
         logger.info(f"RENDICIÓ: Revelada paraula '{paraula_objectiu}'")
+        
+        # Si és una competició, marcar com a rendit
+        if request.comp_id and request.nom_jugador:
+            await actualitzar_progres_competicio(
+                request.comp_id, 
+                request.nom_jugador, 
+                estat_joc="rendit"
+            )
         
         return RendirseResponse(paraula_correcta=paraula_objectiu)
     
