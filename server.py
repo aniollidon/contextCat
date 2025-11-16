@@ -776,8 +776,118 @@ async def root():
 
 @app.get("/paraula-dia")
 async def get_rebuscada():
-    """Retorna la paraula del dia actual"""
-    return {"paraula": DEFAULT_REBUSCADA}
+    """Retorna la paraula del dia actual basada en games.json"""
+    games_path = Path("data/games.json")
+    
+    from datetime import datetime
+    
+    if not games_path.exists():
+        # Si no existeix games.json, retorna la paraula per defecte
+        today = datetime.now().date()
+        return {
+            "id": 1,
+            "name": DEFAULT_REBUSCADA,
+            "startDate": today.strftime("%d-%m-%Y"),
+            "today": today.strftime("%d-%m-%Y")
+        }
+    
+    try:
+        with open(games_path, encoding="utf-8") as f:
+            data = json.load(f)
+        
+        games = data.get("games", [])
+        start_date_str = data.get("startDate", "15-11-2025")
+        
+        # Parseja la data d'inici
+        start_date = datetime.strptime(start_date_str, "%d-%m-%Y").date()
+        today = datetime.now().date()
+        
+        if not games:
+            return {
+                "id": 1,
+                "name": DEFAULT_REBUSCADA,
+                "startDate": start_date_str,
+                "today": today.strftime("%d-%m-%Y")
+            }
+        
+        # Calcula la ID del joc (dies des de l'inici + 1)
+        days_diff = (today - start_date).days
+        target_id = days_diff + 1
+        
+        # Assegura que l'ID estigui dins del rang
+        if target_id < 1:
+            target_id = 1
+        
+        # Busca el joc amb l'ID més proper
+        sorted_games = sorted(games, key=lambda g: g.get("id", 0))
+        
+        if target_id > sorted_games[-1].get("id", 0):
+            # Si l'ID és superior a l'últim, retorna l'últim
+            selected_game = sorted_games[-1]
+        else:
+            # Busca l'ID exacte o el més proper
+            selected_game = None
+            for game in sorted_games:
+                if game.get("id", 0) >= target_id:
+                    selected_game = game
+                    break
+            
+            if not selected_game:
+                selected_game = sorted_games[0]
+        
+        # Retorna informació completa del joc
+        return {
+            "id": selected_game.get("id", 1),
+            "name": selected_game.get("name", DEFAULT_REBUSCADA),
+            "startDate": start_date_str,
+            "today": today.strftime("%d-%m-%Y")
+        }
+        
+    except Exception as e:
+        logger.error(f"Error obtenint paraula del dia: {str(e)}")
+        today = datetime.now().date()
+        return {
+            "id": 1,
+            "name": DEFAULT_REBUSCADA,
+            "startDate": today.strftime("%d-%m-%Y"),
+            "today": today.strftime("%d-%m-%Y")
+        }
+
+@app.get("/public-games")
+async def get_public_games():
+    """Retorna tots els jocs disponibles (sense autenticació)"""
+    games_path = Path("data/games.json")
+    
+    if not games_path.exists():
+        from datetime import datetime
+        today = datetime.now().date()
+        return {
+            "startDate": today.strftime("%d-%m-%Y"),
+            "today": today.strftime("%d-%m-%Y"),
+            "games": []
+        }
+    
+    try:
+        with open(games_path, encoding="utf-8") as f:
+            data = json.load(f)
+        
+        from datetime import datetime
+        today = datetime.now().date()
+        
+        return {
+            "startDate": data.get("startDate", today.strftime("%d-%m-%Y")),
+            "today": today.strftime("%d-%m-%Y"),
+            "games": data.get("games", [])
+        }
+    except Exception as e:
+        logger.error(f"Error llegint games.json: {str(e)}")
+        from datetime import datetime
+        today = datetime.now().date()
+        return {
+            "startDate": today.strftime("%d-%m-%Y"),
+            "today": today.strftime("%d-%m-%Y"),
+            "games": []
+        }
 
 @app.post("/rendirse", response_model=RendirseResponse)
 async def rendirse(request: RendirseRequest):
