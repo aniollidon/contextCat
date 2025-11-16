@@ -111,11 +111,15 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 app = FastAPI()
 
+# Versió de l'API - incrementar quan hi hagi canvis incompatibles amb localStorage
+API_VERSION = "1.0.0"
+
 @app.on_event("startup")
 async def startup_event():
     """Inicia la tasca de neteja de competicions caducades"""
     asyncio.create_task(cleanup_expired_competitions())
     logger.info(f"Competition cleanup task started (expiry: {COMPETITION_EXPIRY_DAYS} days)")
+    logger.info(f"API Version: {API_VERSION}")
 
 # Configurar CORS
 # En producció només permetre rebuscada.cat, en desenvolupament també localhost
@@ -773,6 +777,11 @@ async def competition_websocket(websocket: WebSocket, comp_id: str):
 @app.get("/")
 async def root():
     return {"message": "API del joc de paraules (refactoritzat)"}
+
+@app.get("/version")
+async def get_version():
+    """Retorna la versió de l'API"""
+    return {"version": API_VERSION}
 
 @app.get("/paraula-dia")
 async def get_rebuscada():
