@@ -221,9 +221,49 @@ def carregar_ranking(rebuscada: str):
     except Exception as e:
         raise Exception(f"Error carregant el fitxer de rànquing: {str(e)}")
 
+def validar_joc_disponible(rebuscada: str):
+    """Valida que el joc estigui disponible (no sigui futur)"""
+    games_path = Path("data/games.json")
+    
+    if not games_path.exists():
+        return  # Si no hi ha games.json, permetre qualsevol paraula
+    
+    try:
+        with open(games_path, encoding="utf-8") as f:
+            data = json.load(f)
+        
+        games = data.get("games", [])
+        start_date_str = data.get("startDate", "15-11-2025")
+        
+        # Calcular l'ID del joc actual
+        start_date = datetime.strptime(start_date_str, "%d-%m-%Y").date()
+        today = datetime.now().date()
+        days_diff = (today - start_date).days
+        current_game_id = max(1, days_diff + 1)
+        
+        # Buscar la paraula als jocs
+        for game in games:
+            if game.get("name", "").lower() == rebuscada.lower():
+                game_id = game.get("id", 0)
+                if game_id > current_game_id:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Aquest joc encara no està disponible. Només pots jugar fins al joc #{current_game_id}."
+                    )
+                break
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Error validant disponibilitat del joc '{rebuscada}': {str(e)}")
+        # En cas d'error, permetre el joc
+
 def obtenir_ranking_actiu(rebuscada_request: Optional[str] = None):
     """Obté el rànquing actiu, sigui el global o el especificat"""
     rebuscada = rebuscada_request.lower() if rebuscada_request else DEFAULT_REBUSCADA
+    
+    # Validar que el joc estigui disponible
+    validar_joc_disponible(rebuscada)
+    
     try:
         return carregar_ranking(rebuscada)
     except Exception as e:
@@ -873,7 +913,8 @@ async def get_public_games():
         return {
             "startDate": today.strftime("%d-%m-%Y"),
             "today": today.strftime("%d-%m-%Y"),
-            "games": []
+            "games": [],
+            "currentGameId": 1
         }
     
     try:
@@ -881,12 +922,19 @@ async def get_public_games():
             data = json.load(f)
         
         from datetime import datetime
+        start_date_str = data.get("startDate", "15-11-2025")
+        start_date = datetime.strptime(start_date_str, "%d-%m-%Y").date()
         today = datetime.now().date()
         
+        # Calcular l'ID del joc actual
+        days_diff = (today - start_date).days
+        current_game_id = days_diff + 1
+        
         return {
-            "startDate": data.get("startDate", today.strftime("%d-%m-%Y")),
+            "startDate": start_date_str,
             "today": today.strftime("%d-%m-%Y"),
-            "games": data.get("games", [])
+            "games": data.get("games", []),
+            "currentGameId": max(1, current_game_id)
         }
     except Exception as e:
         logger.error(f"Error llegint games.json: {str(e)}")
@@ -895,6 +943,7 @@ async def get_public_games():
         return {
             "startDate": today.strftime("%d-%m-%Y"),
             "today": today.strftime("%d-%m-%Y"),
+            "currentGameId": 1,
             "games": []
         }
 
