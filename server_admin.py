@@ -638,7 +638,7 @@ def ai_generate(req: AiGenerateRequest, _: None = Depends(require_auth)):
         raise
     except Exception as e:
         logging.exception("/api/ai-generate: error: %s", e)
-        raise HTTPException(status_code=500, detail=f"Error processant AI: {e}")
+        raise HTTPException(status_code=500, detail=f"Hi ha un error en processar l'AI: {e}")
 
 # Cache globals per evitar recàrregues costoses
 _DICC = None
@@ -1077,7 +1077,7 @@ def get_games(_: None = Depends(require_auth)):
             data = json.load(f)
         return data
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error llegint games.json: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Hi ha un error en llegir games.json: {str(e)}")
 
 @app.post("/api/save-games")
 def save_games(req: SaveGamesRequest, _: None = Depends(require_auth)):
@@ -1090,7 +1090,7 @@ def save_games(req: SaveGamesRequest, _: None = Depends(require_auth)):
             json.dump(data, f, ensure_ascii=False, indent=2)
         return {"ok": True}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error desant games.json: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Hi ha un error en desar games.json: {str(e)}")
 
 # ==================== FI ENDPOINTS GAMES.JSON ====================
 

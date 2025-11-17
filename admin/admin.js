@@ -700,7 +700,7 @@ async function saveCalendarGames() {
   const emptyWords = calendarGames.filter((g) => !g.name || !g.name.trim());
   if (emptyWords.length > 0) {
     alert(
-      `No es pot desar: hi ha ${emptyWords.length} paraula(es) buida(es). Si us plau, omple-les o elimina-les.`
+      `No es pot desar: hi ha ${emptyWords.length} paraula(es) buida(es). Emplena-les o elimina-les.`
     );
     return;
   }
@@ -986,7 +986,7 @@ function openAiSearchModal(targetTextarea) {
 
     // Comprova que s'ha modificat el prompt
     if (prompt === defaultPrompt) {
-      errorEl.textContent = "Has de modificar el prompt abans d'enviar.";
+      errorEl.textContent = "Modifiqueu el prompt abans d'enviar.";
       errorEl.style.display = "block";
       return;
     }

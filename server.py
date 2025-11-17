@@ -248,7 +248,7 @@ def validar_joc_disponible(rebuscada: str):
                 if game_id > current_game_id:
                     raise HTTPException(
                         status_code=403,
-                        detail=f"Aquest joc encara no està disponible. Només pots jugar fins al joc #{current_game_id}."
+                        detail=f"Aquest joc encara no està disponible. Només podeu jugar fins al joc #{current_game_id}."
                     )
                 break
     except HTTPException:
@@ -294,7 +294,7 @@ async def guess(request: GuessRequest):
                 es_correcta=es_correcta_directe
             )
         # Si no, rebutja la paraula
-        msg = "Disculpa, aquesta paraula no és vàlida."
+        msg = "Aquesta paraula no és vàlida."
         logger.info(f"GUESS: '{paraula_introduida}' -> INVÀLIDA (objectiu: {paraula_objectiu}) | reason={msg}")
         raise HTTPException(status_code=400, detail=msg)
     rank = ranking_diccionari.get(forma_canonica)
@@ -302,7 +302,7 @@ async def guess(request: GuessRequest):
         logger.info(f"GUESS: '{paraula_introduida}' ({forma_canonica}) -> NO TROBADA (objectiu: {paraula_objectiu})")
         raise HTTPException(
             status_code=400,
-            detail="Disculpa, aquesta paraula no es troba al nostre llistat."
+            detail="Aquesta paraula no es troba al nostre llistat."
         )
     es_correcta = forma_canonica == paraula_objectiu
     
@@ -971,7 +971,7 @@ async def rendirse(request: RendirseRequest):
         logger.error(f"RENDICIÓ: Error - {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error en rendir-se: {str(e)}"
+            detail=f"Hi ha un error en abandonar: {str(e)}"
         )
 
 @app.get("/ranking", response_model=RankingListResponse)
@@ -998,7 +998,7 @@ async def obtenir_ranking(limit: int = Query(300, ge=1, le=2000), rebuscada: Opt
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error obtenint el rànquing: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Hi ha un error en obtenir el rànquing: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
