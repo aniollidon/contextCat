@@ -115,7 +115,7 @@ function logMove(...args) {
   if (!DEBUG_MOVE_LOGS) return;
   try {
     console.debug(new Date().toISOString(), "[MOVE]", ...args);
-  } catch (_) {}
+  } catch (_) { }
 }
 
 // Highlight temporal helper (classe configurable)
@@ -533,8 +533,8 @@ function renderCalendarList() {
       const bgClass = isDuplicate
         ? "bg-warning bg-opacity-25"
         : isInvalid
-        ? "bg-danger bg-opacity-25"
-        : "";
+          ? "bg-danger bg-opacity-25"
+          : "";
 
       return `
       <div class="d-flex align-items-center gap-2 mb-2 p-2 border rounded ${bgClass}" data-cal-idx="${idx}">
@@ -548,17 +548,15 @@ function renderCalendarList() {
         <datalist id="words-datalist-${idx}">
           ${availableWords.map((w) => `<option value="${w}">`).join("")}
         </datalist>
-        ${
-          isDuplicate
-            ? '<small class="text-warning ms-1" title="Paraula repetida: aquesta paraula ja apareix a la llista"><i class="bi bi-exclamation-triangle"></i></small>'
-            : ""
+        ${isDuplicate
+          ? '<small class="text-warning ms-1" title="Paraula repetida: aquesta paraula ja apareix a la llista"><i class="bi bi-exclamation-triangle"></i></small>'
+          : ""
         }
-        ${
-          isInvalid
-            ? '<small class="text-danger ms-1" title="Paraula no trobada: el fitxer /data/words/' +
-              game.name +
-              '.json no existeix"><i class="bi bi-x-circle"></i></small>'
-            : ""
+        ${isInvalid
+          ? '<small class="text-danger ms-1" title="Paraula no trobada: el fitxer /data/words/' +
+          game.name +
+          '.json no existeix"><i class="bi bi-x-circle"></i></small>'
+          : ""
         }
         <button class="btn btn-sm btn-outline-danger calendar-remove-btn" data-cal-idx="${idx}">
           <i class="bi bi-trash"></i>
@@ -1142,29 +1140,24 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px;">
       <div style="display:flex;flex-wrap:wrap;gap:8px;flex:1;">
         <div class="btn-group btn-group-sm" role="group">
-          <button class="btn btn-outline-primary active" id="tab-common" onclick="switchTestTab('common')" title="Test Comú (${
-            commonData.count
-          })">Comú</button>
-          ${
-            hasAiTest
-              ? `<button class="btn btn-outline-primary" id="tab-ai" onclick="switchTestTab('ai')" title="Test IA (${aiData.count})">IA</button>`
-              : ""
-          }
-          ${
-            hasSynonymsTest
-              ? `<button class="btn btn-outline-primary" id="tab-synonyms" onclick="switchTestTab('synonyms')" title="Sinònims ${wordsByPos[0].word} (${synonymsData.count})">SC</button>`
-              : ""
-          }
-          ${
-            hasCustomSynonyms
-              ? `<button class="btn btn-outline-primary" id="tab-custom" onclick="switchTestTab('custom')" title="Sinònims ${customSynonymsData.base_word} (${customSynonymsData.count})">+SC<span id="close-custom-test" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
-              : `<button class="btn btn-outline-info" id="add-synonyms-test" title="Crear test de sinònims d'una paraula">+Sin</button>`
-          }
-          ${
-            hasCustomText
-              ? `<button class="btn btn-outline-primary" id="tab-text" onclick="switchTestTab('text')" title="Text personalitzat (${customTextData.count})"> Propi <span id="close-custom-text" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
-              : `<button class="btn btn-outline-success" id="add-text-test" title="Crear test de text personalitzat">+Propi</button>`
-          }
+          <button class="btn btn-outline-primary active" id="tab-common" onclick="switchTestTab('common')" title="Test Comú (${commonData.count
+    })">Comú</button>
+          ${hasAiTest
+      ? `<button class="btn btn-outline-primary" id="tab-ai" onclick="switchTestTab('ai')" title="Test IA (${aiData.count})">IA</button>`
+      : ""
+    }
+          ${hasSynonymsTest
+      ? `<button class="btn btn-outline-primary" id="tab-synonyms" onclick="switchTestTab('synonyms')" title="Sinònims ${wordsByPos[0].word} (${synonymsData.count})">SC</button>`
+      : ""
+    }
+          ${hasCustomSynonyms
+      ? `<button class="btn btn-outline-primary" id="tab-custom" onclick="switchTestTab('custom')" title="Sinònims ${customSynonymsData.base_word} (${customSynonymsData.count})">+SC<span id="close-custom-test" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
+      : `<button class="btn btn-outline-info" id="add-synonyms-test" title="Crear test de sinònims d'una paraula">+Sin</button>`
+    }
+          ${hasCustomText
+      ? `<button class="btn btn-outline-primary" id="tab-text" onclick="switchTestTab('text')" title="Text personalitzat (${customTextData.count})"> Propi <span id="close-custom-text" style="margin-left:4px; cursor:pointer;" title="Tanca test">✕</span></button>`
+      : `<button class="btn btn-outline-success" id="add-text-test" title="Crear test de text personalitzat">+Propi</button>`
+    }
         </div>
         <div class="btn-group btn-group-sm edit-test-tools-actions" role="group">
           <button class="btn btn-outline-success" id="add-test-inside" title="Afegeix paraules al test comú">+Add</button>
@@ -1183,19 +1176,15 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
   const commonRows = commonData.words
     .map((w) => {
       if (w.found) {
-        return `<div class="test-row" data-word="${w.word}" data-pos="${
-          w.pos
-        }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
+        return `<div class="test-row" data-word="${w.word}" data-pos="${w.pos
+          }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
           <span style="color:${colorPerPos(w.pos)}">${w.word}</span>
           <div style="display: flex; align-items: center; gap: 4px;">
-            <a href="#" data-pos="${
-              w.pos
-            }" class="jump" title="Ves a posició"> (${w.pos})</a>
-            <button class="test-word-menu-btn" data-word="${
-              w.word
-            }" data-pos="${
-          w.pos
-        }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+            <a href="#" data-pos="${w.pos
+          }" class="jump" title="Ves a posició"> (${w.pos})</a>
+            <button class="test-word-menu-btn" data-word="${w.word
+          }" data-pos="${w.pos
+          }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
           </div>
         </div>`;
       }
@@ -1208,19 +1197,15 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     aiRows = aiData.words
       .map((w) => {
         if (w.found) {
-          return `<div class="test-row-ai" data-word="${w.word}" data-pos="${
-            w.pos
-          }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
+          return `<div class="test-row-ai" data-word="${w.word}" data-pos="${w.pos
+            }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
             <span style="color:${colorPerPos(w.pos)}">${w.word}</span>
             <div style="display: flex; align-items: center; gap: 4px;">
-              <a href="#" data-pos="${
-                w.pos
-              }" class="jump" title="Ves a posició"> (${w.pos})</a>
-              <button class="test-word-menu-btn" data-word="${
-                w.word
-              }" data-pos="${
-            w.pos
-          }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+              <a href="#" data-pos="${w.pos
+            }" class="jump" title="Ves a posició"> (${w.pos})</a>
+              <button class="test-word-menu-btn" data-word="${w.word
+            }" data-pos="${w.pos
+            }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
             </div>
           </div>`;
         }
@@ -1237,21 +1222,16 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
           const groupWords = group.words
             .map((w) => {
               if (w.found) {
-                return `<div class="test-row-synonyms" data-word="${
-                  w.word
-                }" data-pos="${
-                  w.pos
-                }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
+                return `<div class="test-row-synonyms" data-word="${w.word
+                  }" data-pos="${w.pos
+                  }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
                   <span style="color:${colorPerPos(w.pos)}">${w.word}</span>
                   <div style="display: flex; align-items: center; gap: 4px;">
-                    <a href="#" data-pos="${
-                      w.pos
-                    }" class="jump" title="Ves a posició"> (${w.pos})</a>
-                    <button class="test-word-menu-btn" data-word="${
-                      w.word
-                    }" data-pos="${
-                  w.pos
-                }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+                    <a href="#" data-pos="${w.pos
+                  }" class="jump" title="Ves a posició"> (${w.pos})</a>
+                    <button class="test-word-menu-btn" data-word="${w.word
+                  }" data-pos="${w.pos
+                  }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
                   </div>
                 </div>`;
               }
@@ -1285,21 +1265,16 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
         const groupWords = group.words
           .map((w) => {
             if (w.found) {
-              return `<div class="test-row-synonyms" data-word="${
-                w.word
-              }" data-pos="${
-                w.pos
-              }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
+              return `<div class="test-row-synonyms" data-word="${w.word
+                }" data-pos="${w.pos
+                }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
                 <span style="color:${colorPerPos(w.pos)}">${w.word}</span>
                 <div style="display: flex; align-items: center; gap: 4px;">
-                  <a href="#" data-pos="${
-                    w.pos
-                  }" class="jump" title="Ves a posició"> (${w.pos})</a>
-                  <button class="test-word-menu-btn" data-word="${
-                    w.word
-                  }" data-pos="${
-                w.pos
-              }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+                  <a href="#" data-pos="${w.pos
+                }" class="jump" title="Ves a posició"> (${w.pos})</a>
+                  <button class="test-word-menu-btn" data-word="${w.word
+                }" data-pos="${w.pos
+                }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
                 </div>
               </div>`;
             }
@@ -1327,19 +1302,15 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     customTextRows = customTextData.words
       .map((w) => {
         if (w.found) {
-          return `<div class="test-row" data-word="${w.word}" data-pos="${
-            w.pos
-          }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
+          return `<div class="test-row" data-word="${w.word}" data-pos="${w.pos
+            }" draggable="true" style="cursor: grab; display: flex; align-items: center; justify-content: space-between;">
             <span style="color:${colorPerPos(w.pos)}">${w.word}</span>
             <div style="display: flex; align-items: center; gap: 4px;">
-              <a href="#" data-pos="${
-                w.pos
-              }" class="jump" title="Ves a posició"> (${w.pos})</a>
-              <button class="test-word-menu-btn" data-word="${
-                w.word
-              }" data-pos="${
-            w.pos
-          }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
+              <a href="#" data-pos="${w.pos
+            }" class="jump" title="Ves a posició"> (${w.pos})</a>
+              <button class="test-word-menu-btn" data-word="${w.word
+            }" data-pos="${w.pos
+            }" title="Més opcions" style="border: none; background: transparent; cursor: pointer; padding: 2px 4px; font-size: 12px; color: #666;">⋮</button>
             </div>
           </div>`;
         }
@@ -1353,37 +1324,33 @@ function renderTestTabs(commonData, aiData, synonymsData, overlay) {
     <div id="test-common-content" class="test-tab-content" style="display:block;">
       <div class="test-body" id="test-body" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${commonRows}</div>
     </div>
-    ${
-      hasAiTest
-        ? `
+    ${hasAiTest
+      ? `
     <div id="test-ai-content" class="test-tab-content" style="display:none;">
       <div class="test-body-ai" id="test-body-ai" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${aiRows}</div>
     </div>`
-        : ""
+      : ""
     }
-    ${
-      hasSynonymsTest
-        ? `
+    ${hasSynonymsTest
+      ? `
     <div id="test-synonyms-content" class="test-tab-content" style="display:none;">
       <div class="test-body-synonyms" id="test-body-synonyms" style="font-size:13px;">${synonymsRows}</div>
     </div>`
-        : ""
+      : ""
     }
-    ${
-      hasCustomSynonyms
-        ? `
+    ${hasCustomSynonyms
+      ? `
     <div id="test-custom-content" class="test-tab-content" style="display:none;">
       <div class="test-body-custom" id="test-body-custom" style="font-size:13px;">${customSynonymsRows}</div>
     </div>`
-        : ""
+      : ""
     }
-    ${
-      hasCustomText
-        ? `
+    ${hasCustomText
+      ? `
     <div id="test-text-content" class="test-tab-content" style="display:none;">
       <div class="test-body-text" id="test-body-text" style="font-size:13px;display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:4px;">${customTextRows}</div>
     </div>`
-        : ""
+      : ""
     }
   `;
 
@@ -1724,8 +1691,8 @@ function updateTestWordAttributes(word, newPos) {
     const clsTestRow = row.classList.contains("test-row")
       ? "test-row"
       : row.classList.contains("test-row-ai")
-      ? "test-row-ai"
-      : "test-row-synonyms";
+        ? "test-row-ai"
+        : "test-row-synonyms";
     const w = row.getAttribute("data-word");
     if (newPos !== null && newPos !== undefined) {
       // estat TROBADA
@@ -1874,13 +1841,10 @@ function renderFileList() {
     const difficulty = difficulties[f] || "";
     const difficultyTag = difficulty ? getDifficultyTag(difficulty) : "";
     span.innerHTML = `
-      <input type="checkbox" class="form-check-input me-2 validate-chk ${
-        valState.className
-      }" id="${chkId}" ${valState.checked ? "checked" : ""} title="${
-      valState.title
-    }" />
-      <button class="star-btn ${
-        isFavorite ? "favorite" : ""
+      <input type="checkbox" class="form-check-input me-2 validate-chk ${valState.className
+      }" id="${chkId}" ${valState.checked ? "checked" : ""} title="${valState.title
+      }" />
+      <button class="star-btn ${isFavorite ? "favorite" : ""
       }" id="${starId}" title="Marca com a preferit" type="button">
         <i class="bi ${isFavorite ? "bi-star-fill" : "bi-star"}"></i>
       </button>
@@ -2117,11 +2081,10 @@ function openCommentModal(type, word = null) {
             <textarea class="form-control" id="comment-textarea" rows="5" placeholder="Escriu el comentari aquí...">${currentComment}</textarea>
           </div>
           <div class="modal-footer">
-            ${
-              currentComment
-                ? '<button type="button" class="btn btn-danger me-auto" id="delete-comment-btn">Esborra</button>'
-                : ""
-            }
+            ${currentComment
+      ? '<button type="button" class="btn btn-danger me-auto" id="delete-comment-btn">Esborra</button>'
+      : ""
+    }
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel·la</button>
             <button type="button" class="btn btn-primary" id="save-comment-btn">Desa</button>
           </div>
@@ -2464,7 +2427,7 @@ function onDragStart(e, pos, item) {
   try {
     const w = wordsByPos[pos] ? wordsByPos[pos].word : undefined;
     logMove("dragstart", { fromPos: pos, word: w });
-  } catch (_) {}
+  } catch (_) { }
   setTimeout(() => item.classList.add("dragging"), 0);
 }
 function onDragEnd(e, item) {
@@ -2512,7 +2475,7 @@ function onDrop(e, pos, item) {
   try {
     const w = wordsByPos[fromIndex] ? wordsByPos[fromIndex].word : undefined;
     logMove("drop-in-list", { word: w, fromPos: fromIndex, toPos: toIndex });
-  } catch (_) {}
+  } catch (_) { }
 
   // Paraula a moure (pot no estar carregada si s'ha mogut prèviament), obtenim del bloc si existeix
   const wObj = wordsByPos[fromIndex];
@@ -2691,7 +2654,39 @@ function positionMenu(menu, x, y) {
   menu.style.left = finalX + "px";
   menu.style.top = finalY + "px";
   menu.style.visibility = "visible";
-} // Menú contextual per paraules del test
+}
+
+function bindSubmenuEvents(menu) {
+  menu.querySelectorAll('.menu-item.has-submenu').forEach(item => {
+    item.addEventListener('mouseenter', () => {
+      const submenu = item.querySelector('.submenu');
+      if (!submenu) return;
+
+      // Reset styles
+      submenu.style.left = '100%';
+      submenu.style.right = 'auto';
+      submenu.style.top = '-5px';
+
+      const rect = submenu.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      // Check horizontal overflow
+      if (rect.right > viewportWidth) {
+        submenu.style.left = 'auto';
+        submenu.style.right = '100%';
+      }
+
+      // Check vertical overflow
+      if (rect.bottom > viewportHeight) {
+        const overflowY = rect.bottom - viewportHeight;
+        submenu.style.top = `-${overflowY + 10}px`;
+      }
+    });
+  });
+}
+
+// Menú contextual per paraules del test
 function showTestWordMenu(e, word, pos, btn) {
   e.preventDefault();
   e.stopPropagation();
@@ -2702,9 +2697,43 @@ function showTestWordMenu(e, word, pos, btn) {
   const menu = document.createElement("div");
   menu.className = "menu";
 
+  // Helper per generar items de moviment ràpid
+  const genQuickMoves = (targets) => {
+    return targets
+      .filter(t => total > t)
+      .map(t => `<div class="menu-item quick-move" data-target="${t}">${t}</div>`)
+      .join('');
+  };
+
   let html = `
-    <div class="menu-item" id="test-move-to-pos">Mou a posició...</div>
-    <div class="menu-item" id="test-move-end">Mou al final</div>
+    <div class="menu-item has-submenu">
+      Mou
+      <div class="submenu">
+        <div class="menu-item" id="test-move-to-pos">Mou a la posició...</div>
+        
+        <div class="menu-item has-submenu">
+          Mou <300
+          <div class="submenu">
+            ${genQuickMoves([10, 50, 100, 200, 300])}
+          </div>
+        </div>
+        
+        <div class="menu-item has-submenu">
+          Mou <1000
+          <div class="submenu">
+            ${genQuickMoves([400, 500, 600, 800, 1000])}
+          </div>
+        </div>
+        
+        <div class="menu-item has-submenu">
+          Mou lluny
+          <div class="submenu">
+            ${genQuickMoves([2000, 3000, 5000, 8000])}
+            <div class="menu-item" id="test-move-end">Al final</div>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="menu-item" id="test-open-dict">Cerca al diccionari</div>
   `;
 
@@ -2713,6 +2742,9 @@ function showTestWordMenu(e, word, pos, btn) {
 
   // Posiciona el menú dins de la pantalla
   positionMenu(menu, menuAnchor.x, menuAnchor.y);
+
+  // Bind submenu events for overflow handling
+  bindSubmenuEvents(menu);
 
   // Event per moure a una nova posició (obre prompt)
   document.getElementById("test-move-to-pos").onclick = async (ev) => {
@@ -2752,7 +2784,7 @@ function showTestWordMenu(e, word, pos, btn) {
         let startRefresh = Math.min(pos, data.to);
         if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
         await refreshLoadedAfter(startRefresh);
-      } catch (_) {}
+      } catch (_) { }
       updateTestWordAttributes(word, data.to);
     } catch (e) {
       alert("No s'ha pogut moure la paraula");
@@ -2784,7 +2816,7 @@ function showTestWordMenu(e, word, pos, btn) {
         let startRefresh = Math.min(pos, data.to);
         if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
         await refreshLoadedAfter(startRefresh);
-      } catch (_) {}
+      } catch (_) { }
       updateTestWordAttributes(word, data.to);
     } catch (e) {
       alert("No s'ha pogut moure la paraula al final");
@@ -2802,6 +2834,44 @@ function showTestWordMenu(e, word, pos, btn) {
     );
     window.open(url, "_blank", "noopener");
   };
+
+  // Enllaça moviments ràpids (igual que al menú principal però adaptat al test)
+  menu.querySelectorAll(".quick-move").forEach((el) => {
+    el.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const targetRaw = parseInt(el.getAttribute("data-target"), 10);
+      const target = Math.min(total - 1, targetRaw);
+
+      closeMenu();
+
+      if (!selected) return;
+      try {
+        logMove("test-menu:quick-move", {
+          file: selected,
+          word,
+          fromPos: pos,
+          toPos: target,
+        });
+        const res = await fetch(`${RANKINGS_API}/${selected}/insert-or-move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ word, to_pos: target }),
+        });
+        if (!res.ok) throw new Error("Error movent paraula");
+        const data = await res.json();
+        await reloadInitialBlock();
+        try {
+          let startRefresh = Math.min(pos, data.to);
+          if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
+          await refreshLoadedAfter(startRefresh);
+        } catch (_) { }
+        updateTestWordAttributes(word, data.to);
+      } catch (e) {
+        alert("No s'ha pogut moure la paraula");
+      }
+    });
+  });
 
   // Tanca el menú si es clica fora
   const closeHandler = (ev) => {
@@ -2824,30 +2894,63 @@ function showMenu(e, pos) {
   const menuRoot = document.getElementById("menu-root");
   const menu = document.createElement("div");
   menu.className = "menu";
-  // Construïm menú amb opcions bàsiques + moviments ràpids
-  const quickTargets = [300, 1500, 3000];
+
   const w = wordsByPos[pos];
   const hasComment = w && comments.words && comments.words[w.word];
 
+  // Helper per generar items de moviment ràpid
+  const genQuickMoves = (targets) => {
+    return targets
+      .filter(t => total > t)
+      .map(t => `<div class="menu-item quick-move" data-target="${t}">${t}</div>`)
+      .join('');
+  };
+
   let html = `
-    <div class="menu-item" id="comment-word">${
-      hasComment ? "Comentar-ho amb el company" : "Afegir comentari"
+    <div class="menu-item" id="comment-word">${hasComment ? "Comentar-ho amb el company" : "Afegir comentari"
     }</div>
-    <div class="menu-item" id="move-to">Mou a posició…</div>
-    <div class="menu-item" id="move-end">Mou al final</div>
+    
+    <div class="menu-item has-submenu">
+      Mou
+      <div class="submenu">
+        <div class="menu-item" id="move-to">Mou a la posició…</div>
+        
+        <div class="menu-item has-submenu">
+          Mou <300
+          <div class="submenu">
+            ${genQuickMoves([10, 50, 100, 200, 300])}
+          </div>
+        </div>
+        
+        <div class="menu-item has-submenu">
+          Mou <1000
+          <div class="submenu">
+            ${genQuickMoves([400, 500, 600, 800, 1000])}
+          </div>
+        </div>
+        
+        <div class="menu-item has-submenu">
+          Mou lluny
+          <div class="submenu">
+            ${genQuickMoves([2000, 3000, 5000, 8000])}
+            <div class="menu-item" id="move-end">Al final</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="menu-item" id="open-dict">Cerca al diccionari</div>
+    <div class="menu-item" id="delete-word" style="color:#c62828;">Elimina paraula…</div>
   `;
-  quickTargets.forEach((t) => {
-    if (total > t) {
-      html += `<div class="menu-item quick-move" data-target="${t}">Mou a ${t}</div>`;
-    }
-  });
-  html += `<div class=\"menu-item\" id=\"open-dict\">Cerca al diccionari</div>`;
-  html += `<div class="menu-item" id="delete-word" style="color:#c62828;">Elimina paraula…</div>`;
+
   menu.innerHTML = html;
   menuRoot.appendChild(menu);
 
   // Posiciona el menú dins de la pantalla
   positionMenu(menu, menuAnchor.x, menuAnchor.y);
+
+  // Bind submenu events for overflow handling
+  bindSubmenuEvents(menu);
 
   document.getElementById("comment-word").onclick = (ev) => {
     ev.preventDefault();
@@ -2921,7 +3024,7 @@ function showMenu(e, pos) {
         let startRefresh = Math.min(fromPos, target);
         if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
         await refreshLoadedAfter(startRefresh);
-      } catch (_) {}
+      } catch (_) { }
       await ensureVisible(target, {
         highlight: true,
         special: true,
@@ -2965,7 +3068,7 @@ async function handleMoveToPrompt() {
     let startRefresh = Math.min(absoluteFrom, target);
     if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
     await refreshLoadedAfter(startRefresh);
-  } catch (_) {}
+  } catch (_) { }
   await ensureVisible(target, {
     highlight: true,
     special: true,
@@ -2987,7 +3090,7 @@ async function handleSendToEndMenu() {
     let startRefresh = Math.min(absoluteFrom, target);
     if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
     await refreshLoadedAfter(startRefresh);
-  } catch (_) {}
+  } catch (_) { }
   await ensureVisible(target, {
     highlight: true,
     special: true,
@@ -3025,7 +3128,7 @@ async function handleDeleteWord() {
       let startRefresh = pos;
       if (startRefresh < PAGE_SIZE) startRefresh = PAGE_SIZE;
       await refreshLoadedAfter(startRefresh);
-    } catch (_) {}
+    } catch (_) { }
     total = data.total;
     // Si la paraula eliminada era part de lastMoveInfo, neteja
     if (lastMoveInfo && lastMoveInfo.toPos === pos) lastMoveInfo = null;
@@ -3435,7 +3538,7 @@ async function promptAddNewWord() {
       }
     );
     if (r.ok) lemmaInfo = await r.json();
-  } catch (_) {}
+  } catch (_) { }
   let warning = "Segur que vols afegir '" + word + "'?\n";
   if (lemmaInfo) {
     if (!lemmaInfo.is_known) {
@@ -3479,9 +3582,9 @@ async function promptAddNewWord() {
     updateTestWordAttributes(data.word, data.to);
     alert(
       `Afegida '${data.word}' a posició ${data.to}.` +
-        (data.is_inflection
-          ? `\nNota: sembla flexió del lema '${data.lemma}'.`
-          : data.lemma
+      (data.is_inflection
+        ? `\nNota: sembla flexió del lema '${data.lemma}'.`
+        : data.lemma
           ? "\nConfirmat com a lema."
           : "")
     );
