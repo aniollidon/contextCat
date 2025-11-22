@@ -20,6 +20,7 @@ class GuessRequest(BaseModel):
     rebuscada: Optional[str] = None  # Paraula del dia opcional
     comp_id: Optional[str] = None  # ID de competició opcional
     nom_jugador: Optional[str] = None  # Nom del jugador en competició
+    es_personalitzada: Optional[bool] = False  # Si és True, no valida disponibilitat del joc
 
 class GuessResponse(BaseModel):
     paraula: str
@@ -37,6 +38,7 @@ class PistaRequest(BaseModel):
     rebuscada: Optional[str] = None  # Paraula del dia opcional
     comp_id: Optional[str] = None  # ID de competició opcional
     nom_jugador: Optional[str] = None  # Nom del jugador en competició
+    es_personalitzada: Optional[bool] = False  # Si és True, no valida disponibilitat del joc
 
 class PistaResponse(BaseModel):
     paraula: str
@@ -48,6 +50,7 @@ class RendirseRequest(BaseModel):
     rebuscada: Optional[str] = None  # Paraula del dia opcional
     comp_id: Optional[str] = None  # ID de competició opcional
     nom_jugador: Optional[str] = None  # Nom del jugador en competició
+    es_personalitzada: Optional[bool] = False  # Si és True, no valida disponibilitat del joc
 
 class RendirseResponse(BaseModel):
     paraula_correcta: str
@@ -257,12 +260,13 @@ def validar_joc_disponible(rebuscada: str):
         logger.warning(f"Error validant disponibilitat del joc '{rebuscada}': {str(e)}")
         # En cas d'error, permetre el joc
 
-def obtenir_ranking_actiu(rebuscada_request: Optional[str] = None):
+def obtenir_ranking_actiu(rebuscada_request: Optional[str] = None, es_personalitzada: bool = False):
     """Obté el rànquing actiu, sigui el global o el especificat"""
     rebuscada = rebuscada_request.lower() if rebuscada_request else DEFAULT_REBUSCADA
     
-    # Validar que el joc estigui disponible
-    validar_joc_disponible(rebuscada)
+    # Validar que el joc estigui disponible (només si no és personalitzada)
+    if not es_personalitzada:
+        validar_joc_disponible(rebuscada)
     
     try:
         return carregar_ranking(rebuscada)
@@ -273,7 +277,7 @@ def obtenir_ranking_actiu(rebuscada_request: Optional[str] = None):
 @app.post("/guess", response_model=GuessResponse)
 async def guess(request: GuessRequest):
     # Obtenir rànquing actiu (global o especificat)
-    ranking_diccionari, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada)
+    ranking_diccionari, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada, request.es_personalitzada)
     
     paraula_introduida = Diccionari.normalitzar_paraula(request.paraula)
     forma_canonica, es_flexio = dicc.obtenir_forma_canonica(paraula_introduida)
@@ -330,7 +334,7 @@ async def guess(request: GuessRequest):
 @app.post("/pista", response_model=PistaResponse)
 async def donar_pista(request: PistaRequest):
     # Obtenir rànquing actiu (global o especificat)
-    ranking_diccionari, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada)
+    ranking_diccionari, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada, request.es_personalitzada)
     intents_actuals = request.intents
     
     # Obtenir les formes canòniques de les paraules provades
@@ -435,7 +439,7 @@ async def donar_pista(request: PistaRequest):
 @app.post("/whynot", response_model=ExplicacioNoValida)
 async def whynot(request: GuessRequest):
     """Endpoint per explicar per què una paraula no és vàlida"""
-    ranking_diccionari, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada)
+    ranking_diccionari, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada, request.es_personalitzada)
     paraula_introduida = Diccionari.normalitzar_paraula(request.paraula)
     # Cas específic: espais no permesos (només una paraula simple)
     if any(ch.isspace() for ch in request.paraula):
@@ -952,7 +956,7 @@ async def rendirse(request: RendirseRequest):
     """Endpoint per rendir-se i obtenir la resposta correcta"""
     try:
         # Obtenir rànquing actiu (global o especificat)
-        ranking_diccionari, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada)
+        ranking_diccionari, total_paraules, paraula_objectiu = obtenir_ranking_actiu(request.rebuscada, request.es_personalitzada)
         
         # Log de rendició
         logger.info(f"RENDICIÓ: Revelada paraula '{paraula_objectiu}'")
